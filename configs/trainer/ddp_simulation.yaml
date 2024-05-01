@@ -1,0 +1,17 @@
+defaults:
+  - default.yaml
+
+# simulate DDP on CPU, useful for debugging
+accelerator: cpu
+devices: 2
+
+use_distributed_sampler: True
+
+strategy: ddp_spawn
+
+# mixed precision for extra speed-up
+precision: bf16-mixed
+
+log_every_n_steps: 10
+
+gradient_clip_val: 0.3

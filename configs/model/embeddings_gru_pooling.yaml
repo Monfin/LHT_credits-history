@@ -1,0 +1,81 @@
+_target_: src.models.tabnn.TabularRNNLitModule
+_recursive_: True
+
+monitor_metric: ${monitor_metric}
+
+train_batch_size: ${data.train_batch_size}
+val_batch_size: ${data.val_batch_size}
+
+outputs_names: 
+  - gelu_output
+  # - tanh_output
+
+outputs_weights:
+  - 1.0
+  # - 1.0
+
+metric_names: 
+  - gini
+  # - accuracy
+
+optimizer: 
+  _target_: torch.optim.Adam
+  _partial_: True
+  lr: 1.0e-3
+  weight_decay: 1.0e-5
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: True
+  mode: max
+  factor: 0.1 # new_lr = factor & old_lr
+  patience: 3
+
+net:
+  _target_: src.models.components.sequential_model.SequentialLitModel
+  embedding_dim: 32
+
+  layers:
+    ### Encoder layer (Embeddings)
+    - _target_: src.models.components.embedding.encoder_layer.EncoderLayer
+
+      categorical_features: ${data.features}
+
+      embedding_dim: ${model.net.embedding_dim}
+
+      dropout_inputs: 0.3
+
+
+    ### Decoder layer (GRU)
+    - _target_: src.models.components.seq_to_seq.gru_seq_to_seq.GRUSeqToSeq
+
+      hidden_size: ${model.net.embedding_dim}
+
+      num_layers_gru: 1
+      bidirectional: False
+
+      dropout_gru: 0.0
+
+
+    ### Pooling layer (Convolutional & Pooling)
+    - _target_: src.models.components.pooling.agg_pooling.ConvPooling
+      pooling_type: all
+
+
+    ### Multioutput Linear Block
+    - _target_: src.models.components.linear_blocks.linear_conv_blocks.MultiOutputLinearBlock
+      # you must specify heads in the same order like outputs_names
+      heads:
+        - _target_: src.models.components.linear_blocks.linear_conv_blocks.LinearBlock
+          in_features: ${model.net.embedding_dim}
+          out_features: 1
+          num_layers: 2
+          activation_type: gelu
+
+        # - _target_: src.models.components.linear_blocks.linear_conv_blocks.LinearBlock
+        #   in_features: ${model.net.embedding_dim}
+        #   out_features: 1
+        #   num_layers: 2
+        #   activation_type: tanh
+
+compile: False

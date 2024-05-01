@@ -1,0 +1,19 @@
+defaults:
+  - default.yaml
+
+# Distributed Data Parallel strategy for gpu(s)
+accelerator: gpu
+devices: 1
+
+use_distributed_sampler: True
+
+strategy: ddp
+
+accumulate_grad_batches: 1
+
+# mixed precision for extra speed-up
+precision: 16-mixed
+
+log_every_n_steps: 10
+
+gradient_clip_val: 0.3

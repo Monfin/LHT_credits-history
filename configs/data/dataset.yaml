@@ -1,0 +1,36 @@
+defaults:
+  - features: features_credits_aggregated.yaml
+  - _self_
+
+_recursive_: False
+
+_target_: src.data.lightning_data_module.LightningDataModuleTabRNN
+
+data_reader:
+  _target_: src.data.components.data_reader.DataReader
+  data_path: ${paths.data_dir}/serialized/ser_full_0
+
+targets_reader: 
+  _target_: src.data.components.targets_indexes_reader.TargetsReader
+  targets_path: ${paths.data_dir}/targets/targets_dict.pickle
+
+indexes_reader: 
+  _target_: src.data.components.targets_indexes_reader.IndexesReader
+  train_path: ${paths.data_dir}/indexes/ser_full_0_indexes/train_indexes.pickle
+  val_path: ${paths.data_dir}/indexes/ser_full_0_indexes/valid_indexes.pickle
+  test_path: null
+
+collator:
+  _target_: src.data.components.collate.BaseCollator
+  max_seq_len: 50
+
+balance_sampler: True
+batch_sampler: False
+n_samples: 10_000
+
+train_batch_size: 32
+val_batch_size: 32
+
+pin_memory: True 
+num_workers: 0
+persistent_workers: False
