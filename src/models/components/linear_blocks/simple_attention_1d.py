@@ -28,3 +28,37 @@ class SimpleAttention1d(nn.Module):
             sequences=att_sequences,
             lengths=x.lengths
         )
+
+
+class PositionwiseFeedForward(nn.Module):
+    def __init__(self, input_size: int, hidden_size: int = None, dropout: float = 0.1):
+        super(PositionwiseFeedForward, self).__init__()
+
+        hidden_size = hidden_size if hidden_size is not None else input_size * 2
+
+        self.position_wise_layer = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, input_size)
+        )
+
+        self.layer_norm = nn.LayerNorm(input_size, eps=1e-6)
+
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x: SingleForwardState) -> SingleForwardState:
+        # Norm(dropout(ReLU(x @ W1 + b1) @ W2 + b2))
+
+        residual = x.sequences
+        lengths = x.lengths
+
+        x = self.dropout(self.position_wise_layer(x.sequences))
+        
+        x += residual
+
+        x = self.layer_norm(x)
+
+        return SingleForwardState(
+            sequences=x,
+            lengths=lengths
+        )

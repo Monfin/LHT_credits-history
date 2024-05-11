@@ -3,9 +3,11 @@ from omegaconf import DictConfig, OmegaConf
 
 import rootutils
 
+from lightning.pytorch.loggers import Logger
+
 import logging
 from lightning import Trainer, LightningModule, LightningDataModule
-from utils.instantiators import instantiate_callbacks
+from utils.instantiators import instantiate_callbacks, instantiate_loggers
 
 from typing import Optional, Tuple, Dict, Any, List
 
@@ -61,14 +63,18 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     log.info("Instantiating callbacks...")
     callbacks: List[L.Callback] = instantiate_callbacks(cfg.get("callbacks"))
 
+    log.info("Instantiating loggers...")
+    logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
+
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
-    trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks)
+    trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
 
     object_dict = {
         "cfg": cfg,
         "datamodule": datamodule,
         "model": model,
         "callbacks": callbacks,
+        "logger": logger,
         "trainer": trainer
     }
 

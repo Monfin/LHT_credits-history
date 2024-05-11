@@ -42,7 +42,10 @@ class DataReader:
         self.data_path = data_path
 
     def setup(self):
-        self.disk_file_data = DiskFile(os.path.join(self.data_path, "data.txt"), os.path.join(self.data_path, "index.txt"))
+        self.disk_file_data = DiskFile(
+            os.path.join(self.data_path, "data.txt"), 
+            os.path.join(self.data_path, "index.txt")
+        )
 
     def __contains__(self, idx) -> bool:
         return True if idx in self.disk_file_data.indexes.keys() else False

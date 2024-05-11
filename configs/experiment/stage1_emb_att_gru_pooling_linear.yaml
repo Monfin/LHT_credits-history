@@ -1,0 +1,155 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py +experiment=example
+
+# defaults:
+#   - override /data: credits_history_dataset.yaml
+#   - override /model: embeddings_gru_pooling.yaml
+#   - override /trainer: cpu.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["credits_history", "simple_rnn"]
+
+seed: 12345
+
+# set data params
+data:
+  data_reader:
+    _target_: src.data.components.data_reader.DataReader
+    data_path: ${paths.data_dir}/serialized/serialized_first_part_v2
+
+  targets_reader: 
+    _target_: src.data.components.targets_indexes_reader.TargetsReader
+    targets_path: ${paths.data_dir}/targets/targets_dict.pickle
+
+  indexes_reader: 
+    _target_: src.data.components.targets_indexes_reader.IndexesReader
+    train_path: ${paths.data_dir}/indexes/ser_full_0_indexes/train_indexes.pickle
+    val_path: ${paths.data_dir}/indexes/ser_full_0_indexes/valid_indexes.pickle
+    test_path: null
+
+  collator:
+    _target_: src.data.components.collate.BaseCollator
+    max_seq_len: 50
+
+  balance_sampler: balanced
+
+  train_batch_size: 64
+  val_batch_size: 128
+
+
+# set trainer params
+trainer:
+  accelerator: cpu
+
+  min_epochs: 1 # prevents early stopping
+  max_epochs: 10
+
+  devices: 1
+
+  # mixed precision for extra speed-up
+  precision: bf16-mixed
+
+  log_every_n_steps: 10
+
+
+# set model params
+model:
+  _target_: src.models.ch_lit_module.CHLitModule
+  _recursive_: True
+
+  conditional_metric: ${conditional_metric}
+
+  train_batch_size: ${data.train_batch_size}
+  val_batch_size: ${data.val_batch_size}
+
+  task_names: 
+    - tanh_output
+
+  task_weights:
+    - 1.0
+
+  metric_names: 
+    - auroc
+    # - accuracy
+
+  optimizer: 
+    _target_: torch.optim.Adam
+    _partial_: True
+    lr: 1.0e-3
+    weight_decay: 1.0e-6
+
+  scheduler:
+    _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+    _partial_: True
+    mode: max
+    factor: 0.1 # new_lr = factor & old_lr
+    patience: 2
+
+  net:
+    _target_: src.models.components.sequential_model.SequentialLitModel
+    embedding_dim: 32
+
+    layers:
+      ### Encoder layer (Embeddings)
+      - _target_: src.models.components.embedding.encoder_layer.EncoderLayer
+
+        numerical_features: ${data.features.numerical}
+        categorical_features: ${data.features.categorical}
+
+        embedding_dim: ${model.net.embedding_dim}
+
+        dropout_inputs: 0.1
+
+
+      ### Simple attention 1d
+      # - _target_: src.models.components.linear_blocks.simple_attention_1d.SimpleAttention1d
+
+      #   features_dim: ${model.net.embedding_dim}
+
+      #   use_batch_norm: False
+
+
+      ### Position wise feed forward
+      - _target_: src.models.components.linear_blocks.simple_attention_1d.PositionwiseFeedForward
+
+        input_size: ${model.net.embedding_dim}
+        hidden_size: ${model.net.embedding_dim}
+
+        dropout: 0.3
+
+
+      ### Decoder layer (GRU)
+      - _target_: src.models.components.seq_to_seq.gru_seq_to_seq.GRUSeqToSeq
+
+        hidden_size: ${model.net.embedding_dim}
+
+        num_layers_gru: 1
+        bidirectional: False
+
+        dropout_gru: 0.0
+
+
+      ### Pooling layer (Convolutional & Pooling)
+      - _target_: src.models.components.pooling.agg_pooling.ConvPooling
+        pooling_type: min_max_avg
+
+
+      ### Multioutput Linear Block
+      - _target_: src.models.components.linear_blocks.linear_conv_blocks.MultiTaskLinearBlock
+        # you must specify heads in the same order like outputs_names
+        heads:
+          - _target_: src.models.components.linear_blocks.linear_conv_blocks.LinearBlock
+            in_features: ${model.net.embedding_dim}
+            out_features: 1
+            num_layers: 2
+            activation_type: tanh
+
+          # - _target_: src.models.components.linear_blocks.linear_conv_blocks.LinearBlock
+          #   in_features: ${model.net.embedding_dim}
+          #   out_features: 1
+          #   num_layers: 2
+          #   activation_type: tanh

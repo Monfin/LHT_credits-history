@@ -1,12 +1,11 @@
 import torch
 from torch.utils.data import Sampler
 
-from typing import Union, Dict
+from typing import Union, Dict, Iterator
 
 import numpy as np
 
 class SequentialSampler(Sampler):
-
     def __init__(self, indices):
         self.indices = indices
 
@@ -18,8 +17,40 @@ class SequentialSampler(Sampler):
 
 
 class BalanceSampler(Sampler):
-    def __init__(self, class_indexes: Dict, n_classes: int = 2, mode: str = "downsampling"):
-        pass
+    def __init__(self, targets: np.array, class_indexes: Dict):
+        self.targets = targets
+        self.class_indexes = class_indexes
+
+        self.samples_per_class = min([len(lbl2idx) for lbl2idx in self.class_indexes.values()])
+
+        self.length = self.samples_per_class * len(set(self.targets))
+
+    def __iter__(self) -> Iterator[int]:
+        indexes = list()
+
+        for label in sorted(self.class_indexes):
+            replace_flag = self.samples_per_class > len(self.class_indexes[label])
+
+            indexes = np.concatenate(
+                (
+                    indexes, 
+                    np.random.choice(
+                        self.class_indexes[label],
+                        self.samples_per_class,
+                        replace_flag
+                    )
+                )
+            )
+
+        indexes = indexes.astype(int).tolist()
+        
+        assert len(indexes) == self.__len__()
+        np.random.shuffle(indexes)
+
+        return iter(indexes)
+    
+    def __len__(self) -> int:
+        return self.length
 
 
 class WeightedRandomSampler(Sampler):
@@ -54,16 +85,32 @@ class SamplerFactory:
         self.n_samples = n_samples
         self.replacement = replacement
 
+        self.targets = targets
+
+        labels = set(self.targets)
+
+        self.lbl2idx = {
+            label: np.arange(len(targets))[targets == label] for label in labels
+        }
+
+    
+    def balanced_random_sampler(self):
+        return BalanceSampler(
+            targets=self.targets,
+            class_indexes=self.lbl2idx
+        )
+
+
+    def weighted_random_sampler(self):
         weights = np.asarray(
             [
-                1. / sum(targets == label) for label in np.unique(targets)
+                1. / len(one_lbl2idx) for one_lbl2idx in self.lbl2idx.values()
             ]
         )
 
-        self.distribution = weights[targets].squeeze()
+        self.distribution = weights[self.targets].squeeze()
         self.distribution = self.distribution / sum(self.distribution)
 
-    def weighted_random_sampler(self):
         return WeightedRandomSampler(
             distribution=self.distribution,
             n_samples=self.n_samples,

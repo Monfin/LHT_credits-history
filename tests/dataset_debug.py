@@ -57,15 +57,14 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     log.info(f"Setup datamodule...")
     datamodule.setup()
 
-    train_dataloader = datamodule.train_dataloader()
+    val_dataloader = datamodule.val_dataloader()
 
     samples = list()
 
-    for batch in train_dataloader:
+    for batch in val_dataloader:
         samples.append(batch)
 
-    for idx in range(90_000):
-        samples.append(datamodule.train_data[idx])
+    print(len(samples))
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="train.yaml")

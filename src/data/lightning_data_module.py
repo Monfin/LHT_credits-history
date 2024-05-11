@@ -15,13 +15,13 @@ from src.utils.sampler import SamplerFactory
 from src.data.components.data_reader import DataReader
 from src.data.components.targets_indexes_reader import IndexesReader, TargetsReader
 
-from src.data.components.dataset import CustomDataset
+from src.data.components.dataset import CreditsHistoryDataset
 
 import logging
 log = logging.getLogger(__name__)
 
 
-class LightningDataModuleTabRNN(LightningDataModule):
+class LitDataModule(LightningDataModule):
     def __init__(
             self,
             data_reader: DataReader,
@@ -44,9 +44,9 @@ class LightningDataModuleTabRNN(LightningDataModule):
             num_workers: int = 0,
             persistent_workers: bool = False
     ) -> None:
-        super(LightningDataModuleTabRNN, self).__init__()
+        super(LitDataModule, self).__init__()
         
-        self.save_hyperparameters(ignore=["data_path", "indexes_reader", "targets_reader"])
+        self.save_hyperparameters()
 
         self.data_reader = hydra.utils.instantiate(data_reader)
 
@@ -75,27 +75,36 @@ class LightningDataModuleTabRNN(LightningDataModule):
         pass
 
 
-    def set_sampler(
-            self, 
-            targets: np.ndarray = None, 
-            n_samples: int = 10_000, 
-            replacement: bool = False
-        ) -> Union[torch.utils.data.Sampler, torch.utils.data.BatchSampler]:
+    def set_sampler(self, targets: np.ndarray = None, n_samples: int = 10_000, replacement: bool = False) -> torch.utils.data.Sampler:
 
         targets = np.asarray(list(targets.values()))
-        
-        # self.replace = n_samples > len(self.indexes)
 
-        if self.hparams.balance_sampler:
+        if self.hparams.balance_sampler == "weighted":
             sampler_factory = SamplerFactory(
                 targets=targets, 
                 n_samples=n_samples,
                 replacement=replacement
             )
             return sampler_factory.weighted_random_sampler()
+        
+        elif self.hparams.balance_sampler == "balanced":
+            sampler_factory = SamplerFactory(
+                targets=targets
+            )
+            return sampler_factory.balanced_random_sampler()
+
         else:
             return torch.utils.data.SequentialSampler(data_source=np.arange(len(targets)))
         
+
+    def set_dataset(self, indexes: np.ndarray, targets: np.ndarray) -> CreditsHistoryDataset:
+        return CreditsHistoryDataset(
+            data=self.data_reader,
+            targets=targets,
+            indexes=indexes,
+            features=self.hparams.features
+        )
+
 
     def setup(self, stage: Optional[str] = None) -> None:
         """
@@ -114,12 +123,11 @@ class LightningDataModuleTabRNN(LightningDataModule):
 
         targets = self.targets_reader.targets
 
-
-        setup_data = lambda indexes, targets: CustomDataset(
+        setup_data = lambda indexes, targets: CreditsHistoryDataset(
             data=self.data_reader,
             targets=targets,
             indexes=indexes,
-            categorical_features=self.hparams.features
+            features=self.hparams.features
         )
 
         setup_sampler = lambda targets, n_samples, replacement: self.set_sampler(
@@ -128,7 +136,7 @@ class LightningDataModuleTabRNN(LightningDataModule):
             replacement=replacement
         )
 
-        # Set train data
+        # TRAIN DATA
         if self.indexes_reader.train_path is not None:
             log.info("Setup train data...")
 
@@ -138,11 +146,18 @@ class LightningDataModuleTabRNN(LightningDataModule):
             self.train_data = setup_data(indexes=train_indexes, targets=train_targets)
 
             log.info(f"Train data shape... <{len(self.train_data.indexes)}>")
+
+            log.info(f"Setting train sampler...")
+            self.train_sampler = setup_sampler(
+                targets=self.train_data.targets, 
+                n_samples=self.hparams.n_samples,
+                replacement=True
+            )
         else: 
             log.info("Skipping setup train data...")
             self.train_data = None
         
-        # Set valid data
+        # VALID DATA
         if self.indexes_reader.val_path is not None:
             log.info("Setup val data...")
 
@@ -156,7 +171,8 @@ class LightningDataModuleTabRNN(LightningDataModule):
             log.info("Skipping setup val data...")
             self.val_data = None
 
-        # Set test data
+
+        # TEST DATA
         if self.indexes_reader.test_path is not None:
             log.info("Setup test data...")
 
@@ -171,35 +187,8 @@ class LightningDataModuleTabRNN(LightningDataModule):
             self.test_data = None
 
 
-        # Set sampler
-        if self.train_data is not None:
-            self.train_sampler = setup_sampler(
-                targets=self.train_data.targets, 
-                n_samples=self.hparams.n_samples,
-                replacement=True
-            )
-        
-        if self.val_data is not None:
-            self.val_sampler = setup_sampler(
-                targets=self.val_data.targets, 
-                n_samples=len(self.val_data.targets),
-                replacement=False
-            )
-
-        if self.test_data is not None:
-            self.test_sampler = setup_sampler(
-                targets=self.test_data.targets, 
-                n_samples=len(self.test_data.targets),
-                replacement=False
-            )
-        elif self.val_data is not None:
+        if self.test_data is None:
             self.test_data = self.val_data
-
-            self.test_sampler = setup_sampler(
-                targets=self.test_data.targets, 
-                n_samples=len(self.test_data.targets),
-                replacement=False
-            )
 
 
     def train_dataloader(self) -> torch.utils.data.DataLoader[Any]:
@@ -212,13 +201,6 @@ class LightningDataModuleTabRNN(LightningDataModule):
         collator = hydra.utils.instantiate(self.hparams.collator)
 
         return torch.utils.data.DataLoader(
-            dataset=self.train_data,
-            num_workers=self.hparams.num_workers,
-            pin_memory=self.hparams.pin_memory,
-            collate_fn=collator,
-            batch_sampler=self.train_sampler,
-            persistent_workers=self.hparams.persistent_workers
-        ) if self.hparams.batch_sampler else torch.utils.data.DataLoader(
             dataset=self.train_data,
             batch_size=self.hparams.train_batch_size,
             num_workers=self.hparams.num_workers,
@@ -239,18 +221,10 @@ class LightningDataModuleTabRNN(LightningDataModule):
 
         return torch.utils.data.DataLoader(
             dataset=self.val_data,
-            num_workers=self.hparams.num_workers,
-            pin_memory=self.hparams.pin_memory,
-            collate_fn=collator,
-            batch_sampler=self.val_sampler,
-            persistent_workers=self.hparams.persistent_workers
-        ) if self.hparams.batch_sampler else torch.utils.data.DataLoader(
-            dataset=self.val_data,
             batch_size=self.hparams.val_batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             collate_fn=collator,
-            sampler=self.val_sampler,
             persistent_workers=self.hparams.persistent_workers
         ) 
 
@@ -265,18 +239,10 @@ class LightningDataModuleTabRNN(LightningDataModule):
 
         return torch.utils.data.DataLoader(
             dataset=self.test_data,
-            num_workers=self.hparams.num_workers,
-            pin_memory=self.hparams.pin_memory,
-            collate_fn=collator,
-            batch_sampler=self.test_sampler,
-            persistent_workers=self.hparams.persistent_workers
-        ) if self.hparams.batch_sampler else torch.utils.data.DataLoader(
-            dataset=self.test_data,
             batch_size=self.hparams.val_batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             collate_fn=collator,
-            sampler=self.test_sampler,
             persistent_workers=self.hparams.persistent_workers
         ) 
     

@@ -4,11 +4,11 @@ from typing import Optional, Union, List
 
 from src.data.components.collate import ModelOutput
 
-
 ACTIVATION_TYPE_MAPPING = {
     "tanh": nn.Tanh,
     "gelu": nn.GELU,
-    "relu": nn.ReLU
+    "relu": nn.ReLU,
+    "none": nn.Identity
 }
 
 def init_linear_block_weights(layer):
@@ -37,7 +37,8 @@ class LinearBlock(nn.Module):
             self.act = ACTIVATION_TYPE_MAPPING["tanh"]
         elif activation_type in ACTIVATION_TYPE_MAPPING.keys():
             self.act = ACTIVATION_TYPE_MAPPING[activation_type]
-        else: NotImplementedError(f"activation_type must be in <{list(ACTIVATION_TYPE_MAPPING.keys())}>")
+        else: 
+            NotImplementedError(f"activation_type must be in <{list(ACTIVATION_TYPE_MAPPING.keys())}>")
 
         if use_batch_norm:
             self.layer_norm = nn.BatchNorm1d
@@ -81,12 +82,12 @@ class LinearBlock(nn.Module):
         )
 
 
-class MultiOutputLinearBlock(nn.Module):
+class MultiTaskLinearBlock(nn.Module):
     def __init__(
             self,
             heads: List[LinearBlock]
     ) -> None: 
-        super(MultiOutputLinearBlock, self).__init__()
+        super(MultiTaskLinearBlock, self).__init__()
 
         self.heads = nn.ModuleList(heads)
 
@@ -101,59 +102,3 @@ class MultiOutputLinearBlock(nn.Module):
             representations=x.representations,
             logits=logits
         )
-
-    
-class Conv1dBlock(nn.Module):
-    def __init__(
-            self, 
-            in_channels: int, 
-            out_channels: int, 
-            num_layers: int = 3, 
-            dropout_rate: float = 0.0, 
-            activation_type: str = "tanh",
-            padding: Optional[Union[str, int]] = "same"
-        ) -> None:
-        super(Conv1dBlock, self).__init__()
-
-        self.dropout = nn.Dropout(p=dropout_rate)
-
-        if activation_type is None:
-            self.act = ACTIVATION_TYPE_MAPPING["tanh"]
-        elif activation_type in ACTIVATION_TYPE_MAPPING.keys():
-            self.act = ACTIVATION_TYPE_MAPPING[activation_type]
-        else: NotImplementedError(f"activation_type must be in <{list(ACTIVATION_TYPE_MAPPING.keys())}>")
-
-        self.conv_block = nn.Sequential(
-            *[
-                nn.Sequential(
-                    *[
-                        nn.Conv1d(
-                            in_channels=in_channels // (2 ** i), 
-                            out_channels=in_channels // (2 ** (i + 1)), 
-                            kernel_size=3, 
-                            padding=padding,
-                            bias=False
-                        ),
-                        self.act(),
-                        nn.BatchNorm1d(num_features=in_channels // (2 ** (i + 1)))
-                    ]
-                ) for i in range(num_layers)
-            ]
-        )
-
-        self.out_block = nn.Conv1d(
-            in_channels=in_channels // (2 ** num_layers),
-            out_channels=out_channels,
-            kernel_size=3,
-            padding=padding
-        )
-
-        self.cls_layers = nn.Sequential(
-            self.dropout,
-            self.conv_block,
-            self.out_block,
-            self.act()
-        )
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.cls_layers(inputs)

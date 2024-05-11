@@ -46,6 +46,23 @@ def max_pooling(hidden_state: torch.Tensor, dim: int = 1):
     return torch.max(hidden_state, dim=dim).values
 
 
+class AvgPooling(PoolingType):
+    def __init__(self, dim: int = 1):
+        super(AvgPooling, self).__init__()
+
+        self.dim = dim
+
+        self.num_poolings = 1
+
+    def forward(self, hidden_state: torch.Tensor):
+        pooled_results = [
+            avg_pooling(hidden_state, self.dim)
+        ]
+        hidden_state_pooled = torch.stack(pooled_results, dim=self.dim)
+
+        return hidden_state_pooled
+
+
 class LastPooling(PoolingType):
     def __init__(self, dim: int = 1):
         super(LastPooling, self).__init__()
@@ -160,6 +177,7 @@ class AllPoolings(PoolingType):
 
 POOLING_MAPPING = {
     "all": AllPoolings,
+    "avg": AvgPooling,
     "min_max": MinMaxPoolings,
     "min_max_avg": MinMaxAvgPoolings,
     "last": LastPooling,
@@ -184,19 +202,22 @@ class ConvPooling(nn.Module):
         
         self.pooling_layer = POOLING_MAPPING[pooling_type](dim=dim)
 
-        self.conv_layer = nn.Conv1d(
-            in_channels=self.pooling_layer.num_poolings, 
-            out_channels=1, 
-            kernel_size=self.pooling_layer.num_poolings, 
-            padding="same",
-            bias=False
-        )
+        if self.pooling_layer.num_poolings > 1:
+            self.agg_layer = nn.Conv1d(
+                in_channels=self.pooling_layer.num_poolings, 
+                out_channels=1, 
+                kernel_size=self.pooling_layer.num_poolings, 
+                padding="same",
+                bias=False
+            )
+        else:
+            self.agg_layer = nn.Identity()
 
         # self.batch_norm = nn.BatchNorm1d(num_features=self.pooling_layer.num_poolings)
         
     def forward(self, hidden_state: SingleForwardState) -> ModelOutput:
         x = self.pooling_layer(hidden_state.sequences)
-        x = self.conv_layer(x).squeeze(self.dim)
+        x = self.agg_layer(x).squeeze(self.dim)
 
         return ModelOutput(
             representations=x,

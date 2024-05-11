@@ -1,35 +1,32 @@
-_target_: src.models.tabnn.TabularRNNLitModule
+_target_: src.models.ch_lit_module.CHLitModule
 _recursive_: True
 
-monitor_metric: ${monitor_metric}
+conditional_metric: ${conditional_metric}
 
 train_batch_size: ${data.train_batch_size}
 val_batch_size: ${data.val_batch_size}
 
-outputs_names: 
-  - gelu_output
-  # - tanh_output
+task_names: 
+  - tanh_output
 
-outputs_weights:
+task_weights:
   - 1.0
-  # - 1.0
 
 metric_names: 
-  - gini
-  # - accuracy
+  - auroc
 
 optimizer: 
   _target_: torch.optim.Adam
   _partial_: True
   lr: 1.0e-3
-  weight_decay: 1.0e-5
+  weight_decay: 1.0e-6
 
 scheduler:
   _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
   _partial_: True
   mode: max
   factor: 0.1 # new_lr = factor & old_lr
-  patience: 3
+  patience: 2
 
 net:
   _target_: src.models.components.sequential_model.SequentialLitModel
@@ -39,11 +36,21 @@ net:
     ### Encoder layer (Embeddings)
     - _target_: src.models.components.embedding.encoder_layer.EncoderLayer
 
-      categorical_features: ${data.features}
+      numerical_features: ${data.features.numerical}
+      categorical_features: ${data.features.categorical}
 
       embedding_dim: ${model.net.embedding_dim}
 
-      dropout_inputs: 0.3
+      dropout_inputs: 0.1
+
+  
+    ### Position wise feed forward
+    - _target_: src.models.components.linear_blocks.simple_attention_1d.PositionwiseFeedForward
+
+      input_size: ${model.net.embedding_dim}
+      hidden_size: ${model.net.embedding_dim}
+
+      dropout: 0.3
 
 
     ### Decoder layer (GRU)
@@ -59,23 +66,17 @@ net:
 
     ### Pooling layer (Convolutional & Pooling)
     - _target_: src.models.components.pooling.agg_pooling.ConvPooling
-      pooling_type: all
+      pooling_type: avg
 
 
     ### Multioutput Linear Block
-    - _target_: src.models.components.linear_blocks.linear_conv_blocks.MultiOutputLinearBlock
+    - _target_: src.models.components.linear_blocks.linear_conv_blocks.MultiTaskLinearBlock
       # you must specify heads in the same order like outputs_names
       heads:
         - _target_: src.models.components.linear_blocks.linear_conv_blocks.LinearBlock
           in_features: ${model.net.embedding_dim}
           out_features: 1
           num_layers: 2
-          activation_type: gelu
-
-        # - _target_: src.models.components.linear_blocks.linear_conv_blocks.LinearBlock
-        #   in_features: ${model.net.embedding_dim}
-        #   out_features: 1
-        #   num_layers: 2
-        #   activation_type: tanh
+          activation_type: tanh
 
 compile: False

@@ -1,6 +1,7 @@
 from torchmetrics.classification import BinaryAUROC
 import torch
 
+# todo ~ failure with .compute()
 class GINI(BinaryAUROC):
     def __init__(self) -> None:
         super(GINI, self).__init__()

@@ -4,7 +4,7 @@ from torch import nn
 import numpy as np
 
 from torchmetrics import MaxMetric, MeanMetric
-from torchmetrics.classification import BinaryAccuracy
+from torchmetrics.classification import BinaryAccuracy, BinaryAUROC
 from src.utils.metrics import GINI
 
 from src.data.components.collate import ModelInput, ModelBatch, ModelOutput
@@ -18,23 +18,24 @@ log = logging.getLogger(__name__)
 
 
 METRICS_MAPPING = {
+    "auroc": BinaryAUROC,
     "gini": GINI,
     "accuracy": BinaryAccuracy
 }
 
 
-class TabularRNNLitModule(L.LightningModule):
+class CHLitModule(L.LightningModule):
     def __init__(
             self, 
             net: nn.Module,
             train_batch_size: int,
             val_batch_size: int,
 
-            outputs_names: List[str],
-            outputs_weights: List[float],
+            task_names: List[str],
+            task_weights: List[float],
 
             metric_names: List[str],
-            monitor_metric: str,
+            conditional_metric: str,
 
             optimizer: torch.optim.Optimizer,
             scheduler: torch.optim.lr_scheduler,
@@ -42,13 +43,10 @@ class TabularRNNLitModule(L.LightningModule):
             compile: bool = False
         ) -> None:
 
-        super(TabularRNNLitModule, self).__init__()
-        self.save_hyperparameters(logger=False)
+        super(CHLitModule, self).__init__()
+        self.save_hyperparameters()
 
-        self.monitor_metric = monitor_metric
-
-        self.monitor_metric_name = self.monitor_metric.split("/")[-1].split("_")[0]
-        # self.monitor_output_name = self.monitor_metric.split("/")[1]
+        self.conditional_metric = conditional_metric
 
         self.net = net
 
@@ -56,53 +54,55 @@ class TabularRNNLitModule(L.LightningModule):
             reduction="none"
         )
 
-        # if the nrof logis is less than outputs_names, then zip automatically reduces them
-        self.outputs_names = outputs_names
-        self.outputs_weights = torch.tensor(outputs_weights)
+        # if the nrof logis is less than task_names, then zip automatically reduces them
+        self.task_names = task_names
+        self.task_weights = torch.tensor(task_weights)
 
         self.metrics_names = metric_names
 
         # metric objects for calculating BinaryAUROC (~GINI) / Accuracy across batches
         self.train_metrics = nn.ModuleDict({
-            output_name: nn.ModuleDict({
+            task: nn.ModuleDict({
                 metric_name: METRICS_MAPPING[metric_name]() for metric_name in self.metrics_names
-            }) for output_name in self.outputs_names
+            }) for task in self.task_names
         }) 
         self.val_metrics = nn.ModuleDict({
-            output_name: nn.ModuleDict({
+            task: nn.ModuleDict({
                 metric_name: METRICS_MAPPING[metric_name]() for metric_name in self.metrics_names
-            }) for output_name in self.outputs_names
+            }) for task in self.task_names
         }) 
         self.test_metrics = nn.ModuleDict({
-            output_name: nn.ModuleDict({
+            task: nn.ModuleDict({
                 metric_name: METRICS_MAPPING[metric_name]() for metric_name in self.metrics_names
-            }) for output_name in self.outputs_names
+            }) for task in self.task_names
         })
+
+        conditional_metric_name = self.conditional_metric.split("/")[-1].split("_")[0]
+        assert conditional_metric_name in METRICS_MAPPING.keys(), \
+            f"Conditional metric name should be in the <{list(METRICS_MAPPING.keys())}>, but you have <{conditional_metric_name}>"
         
         self.monitor_metric = sum(
             [
-                self.val_metrics[output_name][self.monitor_metric_name] for output_name in self.outputs_names
+                self.val_metrics[task][conditional_metric_name] for task in self.task_names
             ]
-        ) / len(self.outputs_names)
-        
-        # Compositional metrics
-        # for metric_name in self.metrics_names:
-        #     self.train_metrics[f"avg_outputs_{metric_name}"] = / len(self.outputs_names)
+        ) / len(self.task_names)
+
+        self.val_scoring_metrics = dict().fromkeys(self.task_names, dict().fromkeys(self.metrics_names, list()))
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
         self.train_branched_loss = nn.ModuleDict({
-            output_name: MeanMetric() for output_name in self.outputs_names
+            task: MeanMetric() for task in self.task_names
         })
 
         self.val_loss = MeanMetric()
         self.val_branched_loss = nn.ModuleDict({
-            output_name: MeanMetric() for output_name in self.outputs_names
+            task: MeanMetric() for task in self.task_names
         })
 
         self.test_loss = MeanMetric()
         self.test_branched_loss = nn.ModuleDict({
-            output_name: MeanMetric() for output_name in self.outputs_names
+            task: MeanMetric() for task in self.task_names
         })
 
         # for tracking best so far validation gini
@@ -120,23 +120,23 @@ class TabularRNNLitModule(L.LightningModule):
         self.val_loss.reset()
         self.monitor_metric.reset()
 
-        for output_name in self.outputs_names:
-            self.val_best_metric[output_name].reset()
+        for task in self.task_names:
+            self.val_best_metric[task].reset()
 
             for metric_name in self.metrics_names:
-                self.val_metrics[output_name][metric_name].reset()
+                self.val_metrics[task][metric_name].reset()
 
 
     def multioutput_loss(self, logits: ModelOutput, targets: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         # logits size is (batch_size, num_outputs)
         # targets size is (batch_size, 1)
 
-        targets = targets.expand(size=(-1, len(self.outputs_names))) # to size like logits
+        targets = targets.expand(size=(-1, len(self.task_names))) # to size like logits
 
-        weighted_loss = self.outputs_weights * self.criterion(logits, targets)
+        weighted_loss = self.task_weights * self.criterion(logits, targets)
         
-        # (self.outputs_weights * self.criterion(logits, targets)).sum() / len(self.outputs_names)
-        loss = weighted_loss.sum() / (len(weighted_loss) * len(self.outputs_names))
+        # (self.task_weights * self.criterion(logits, targets)).sum() / len(self.task_names)
+        loss = weighted_loss.sum() / (len(weighted_loss) * len(self.task_names))
         branched_loss = (weighted_loss.sum(dim=0) / len(weighted_loss)).detach()
 
         return loss, branched_loss 
@@ -144,8 +144,8 @@ class TabularRNNLitModule(L.LightningModule):
         
     def model_step(self, batch: ModelBatch) -> Tuple[torch.Tensor, ModelOutput]:
         x = ModelInput(
+            numerical=batch.numerical,
             categorical=batch.categorical,
-            mask=batch.mask,
             lengths=batch.lengths
         )
 
@@ -162,6 +162,10 @@ class TabularRNNLitModule(L.LightningModule):
 
 
     def training_step(self, batch: ModelBatch, batch_idx: int) -> Dict:
+        """
+        :param enable_graph: If True, will not auto detach the graph. 
+        """
+
         loss, branched_loss, outputs, labels = self.model_step(batch)
 
         self.train_loss(loss)
@@ -172,29 +176,32 @@ class TabularRNNLitModule(L.LightningModule):
             on_step=True, on_epoch=True, prog_bar=False, sync_dist=False
         )
 
-        for i, output_name in enumerate(self.outputs_names):
-            self.train_branched_loss[output_name](branched_loss[i])
+        for i, task in enumerate(self.task_names):
+
+            self.train_branched_loss[task](branched_loss[i])
 
             self.log(
-                f"train/loss_{output_name}",
-                self.train_branched_loss[output_name],
+                f"train/loss_{task}",
+                self.train_branched_loss[task],
                 batch_size=self.hparams.train_batch_size,
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=False
             )
 
             self.log(
-                f"train/batch_cnt_ones_{output_name}",
+                f"train/batch_cnt_ones_{task}",
                 sum(labels == 1).type(torch.float32),
                 batch_size=self.hparams.train_batch_size,
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
             )
 
             for metric_name in self.metrics_names:
-                self.train_metrics[output_name][metric_name](outputs[:, i], labels)
+
+                self.train_metrics[task][metric_name](outputs[:, i], labels)
                 
                 self.log(
-                    f"train/{output_name}/{metric_name}", 
-                    self.train_metrics[output_name][metric_name], 
+                    f"train/{task}/{metric_name}", 
+                    self.train_metrics[task][metric_name], 
+                    # self.train_metrics[task][metric_name](outputs[:, i], labels),
                     batch_size=self.hparams.train_batch_size,
                     on_step=True, on_epoch=True, prog_bar=True, sync_dist=False
                 )
@@ -214,25 +221,19 @@ class TabularRNNLitModule(L.LightningModule):
             on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
         )
 
-        for i, output_name in enumerate(self.outputs_names):
-            self.val_branched_loss[output_name](branched_loss[i])
+        for i, task in enumerate(self.task_names):
+
+            self.val_branched_loss[task](branched_loss[i])
 
             self.log(
-                f"val/loss_{output_name}",
-                self.val_branched_loss[output_name],
+                f"val/loss_{task}",
+                self.val_branched_loss[task],
                 batch_size=self.hparams.val_batch_size,
                 on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
             )
 
             for metric_name in self.metrics_names:
-                self.val_metrics[output_name][metric_name](outputs[:, i], labels)
-                
-                self.log(
-                    f"val/{output_name}/{metric_name}", 
-                    self.val_metrics[output_name][metric_name], 
-                    batch_size=self.hparams.val_batch_size,
-                    on_step=False, on_epoch=True, prog_bar=True, sync_dist=True
-                )
+                self.val_scoring_metrics[task][metric_name].append([outputs[:, i], labels])
 
         return {"loss": loss}
     
@@ -243,13 +244,29 @@ class TabularRNNLitModule(L.LightningModule):
         # log `val_acc_best` as a value through `.compute()` method, instead of as a metric object
         # otherwise metric would be reset by lightning after each epoch
 
-        # self.val_best_metric(self.monitor_metric.compute())
+        scores_and_targets = dict().fromkeys(self.task_names, dict().fromkeys(self.metrics_names))
+
+        for task in self.task_names:
+            for metric_name in self.metrics_names:
+                scores_and_targets[task][metric_name] = torch.concatenate(
+                    [
+                        torch.stack(item).T for item in self.val_scoring_metrics[task][metric_name]
+                    ]
+                )
+
+                self.val_metrics[task][metric_name](*scores_and_targets[task][metric_name].unbind(dim=1))
+                
+                self.log(
+                    f"val/{task}/{metric_name}", 
+                    self.val_metrics[task][metric_name], 
+                    # batch_size=self.hparams.val_batch_size,
+                    on_step=False, on_epoch=True, prog_bar=True, sync_dist=True
+                )
+
         self.val_best_metric(self.monitor_metric.compute())
 
-        # print("epoch end")
-
         self.log(
-            f"val/{self.monitor_metric_name}_avg_best", 
+            f"{self.conditional_metric}", 
             self.val_best_metric.compute(), 
             sync_dist=True, prog_bar=True
         )
@@ -267,22 +284,22 @@ class TabularRNNLitModule(L.LightningModule):
             on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
         )
 
-        for i, output_name in enumerate(self.outputs_names):
-            self.test_branched_loss[output_name](branched_loss[i])
+        for i, task in enumerate(self.task_names):
+            self.test_branched_loss[task](branched_loss[i])
 
             self.log(
-                f"test/loss_{output_name}",
-                self.test_branched_loss[output_name],
+                f"test/loss_{task}",
+                self.test_branched_loss[task],
                 batch_size=self.hparams.val_batch_size,
                 on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
             )
 
             for metric_name in self.metrics_names:
-                self.test_metrics[output_name][metric_name](outputs[:, i], labels)
+                self.test_metrics[task][metric_name](outputs[:, i], labels)
                 
                 self.log(
-                    f"test/{output_name}/{metric_name}", 
-                    self.test_metrics[output_name][metric_name], 
+                    f"test/{task}/{metric_name}", 
+                    self.test_metrics[task][metric_name], 
                     batch_size=self.hparams.val_batch_size,
                     on_step=False, on_epoch=True, prog_bar=True, sync_dist=True
                 )
@@ -324,7 +341,7 @@ class TabularRNNLitModule(L.LightningModule):
                 "optimizer": optimizer,
                 "lr_scheduler": {
                     "scheduler": scheduler,
-                    "monitor": self.monitor_metric,
+                    "monitor": self.conditional_metric,
                     "interval": "epoch",
                     "frequency": 1,
                 },
