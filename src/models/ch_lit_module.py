@@ -87,7 +87,7 @@ class CHLitModule(L.LightningModule):
             ]
         ) / len(self.task_names)
 
-        self.val_scoring_metrics = dict().fromkeys(self.task_names, dict().fromkeys(self.metrics_names, list()))
+        self.reset_valid_scoring()
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
@@ -109,7 +109,15 @@ class CHLitModule(L.LightningModule):
         self.val_best_metric = MaxMetric()
 
 
-    def forward(self, inputs: ModelInput) -> Dict[str, ModelOutput]:
+    def reset_valid_scoring(self):
+        self.val_scoring_metrics = dict().fromkeys(self.task_names, dict().fromkeys(self.metrics_names, list()))
+        self.val_scoring_losses = {
+            "loss": list(),
+            "branched_loss": dict().fromkeys(self.task_names, list())
+        }
+
+
+    def forward(self, inputs: ModelInput) -> ModelOutput:
         return self.net(inputs)
     
 
@@ -127,7 +135,7 @@ class CHLitModule(L.LightningModule):
                 self.val_metrics[task][metric_name].reset()
 
 
-    def multioutput_loss(self, logits: ModelOutput, targets: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def multioutput_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         # logits size is (batch_size, num_outputs)
         # targets size is (batch_size, 1)
 
@@ -173,7 +181,7 @@ class CHLitModule(L.LightningModule):
             "train/loss", 
             self.train_loss, 
             batch_size=self.hparams.train_batch_size,
-            on_step=True, on_epoch=True, prog_bar=False, sync_dist=False
+            on_step=True, on_epoch=True, prog_bar=True, sync_dist=False
         )
 
         for i, task in enumerate(self.task_names):
@@ -213,29 +221,34 @@ class CHLitModule(L.LightningModule):
         loss, branched_loss, outputs, labels = self.model_step(batch)
 
         # update and log metrics
-        self.val_loss(loss)
-        self.log(
-            "val/loss", 
-            self.val_loss, 
-            batch_size=self.hparams.val_batch_size,
-            on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
-        )
+
+        self.val_scoring_losses["loss"].append(loss)
+
+        # self.val_loss(loss)
+        # self.log(
+        #     "val/loss", 
+        #     self.val_loss, 
+        #     batch_size=self.hparams.val_batch_size,
+        #     on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
+        # )
 
         for i, task in enumerate(self.task_names):
 
-            self.val_branched_loss[task](branched_loss[i])
+            self.val_scoring_losses["branched_loss"][task].append(branched_loss[i])
 
-            self.log(
-                f"val/loss_{task}",
-                self.val_branched_loss[task],
-                batch_size=self.hparams.val_batch_size,
-                on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
-            )
+            # self.val_branched_loss[task](branched_loss[i])
+
+            # self.log(
+            #     f"val/loss_{task}",
+            #     self.val_branched_loss[task],
+            #     batch_size=self.hparams.val_batch_size,
+            #     on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
+            # )
 
             for metric_name in self.metrics_names:
                 self.val_scoring_metrics[task][metric_name].append([outputs[:, i], labels])
 
-        return {"loss": loss}
+        return None # {"loss": loss}
     
 
     def on_validation_epoch_end(self) -> None:
@@ -244,9 +257,32 @@ class CHLitModule(L.LightningModule):
         # log `val_acc_best` as a value through `.compute()` method, instead of as a metric object
         # otherwise metric would be reset by lightning after each epoch
 
+        loss = torch.stack(self.val_scoring_losses["loss"]).mean()
+
+        self.val_loss(loss)
+
+        self.log(
+            "val/loss", 
+            self.val_loss, 
+            on_step=False, on_epoch=True, prog_bar=True, sync_dist=True
+        )
+
         scores_and_targets = dict().fromkeys(self.task_names, dict().fromkeys(self.metrics_names))
+        branched_loss = dict().fromkeys(self.task_names)
 
         for task in self.task_names:
+            branched_loss[task] = torch.stack(
+                self.val_scoring_losses["branched_loss"][task]
+            ).mean()
+
+            self.val_branched_loss[task](branched_loss[task])
+
+            self.log(
+                f"val/loss_{task}",
+                self.val_branched_loss[task],
+                on_step=False, on_epoch=True, prog_bar=True, sync_dist=True
+            )
+
             for metric_name in self.metrics_names:
                 scores_and_targets[task][metric_name] = torch.concatenate(
                     [
@@ -259,7 +295,6 @@ class CHLitModule(L.LightningModule):
                 self.log(
                     f"val/{task}/{metric_name}", 
                     self.val_metrics[task][metric_name], 
-                    # batch_size=self.hparams.val_batch_size,
                     on_step=False, on_epoch=True, prog_bar=True, sync_dist=True
                 )
 
@@ -270,6 +305,8 @@ class CHLitModule(L.LightningModule):
             self.val_best_metric.compute(), 
             sync_dist=True, prog_bar=True
         )
+
+        self.reset_valid_scoring()
 
 
     def test_step(self, batch: ModelBatch, batch_idx: int) -> Dict:

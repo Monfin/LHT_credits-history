@@ -102,7 +102,7 @@ model:
 
         embedding_dim: ${model.net.embedding_dim}
 
-        dropout_inputs: 0.1
+        dropout_inputs: 0.3
 
 
       ### Simple attention 1d
@@ -117,7 +117,7 @@ model:
       - _target_: src.models.components.linear_blocks.simple_attention_1d.PositionwiseFeedForward
 
         input_size: ${model.net.embedding_dim}
-        hidden_size: ${model.net.embedding_dim}
+        hidden_size: ${eval:${model.net.embedding_dim} * 2}
 
         dropout: 0.3
 
