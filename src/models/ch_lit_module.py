@@ -110,10 +110,16 @@ class CHLitModule(L.LightningModule):
 
 
     def reset_valid_scoring(self):
-        self.val_scoring_metrics = dict().fromkeys(self.task_names, dict().fromkeys(self.metrics_names, list()))
+        self.val_scoring_metrics = {
+            task: {
+                metric: list() for metric in self.metrics_names
+            } for task in self.task_names
+        }
         self.val_scoring_losses = {
             "loss": list(),
-            "branched_loss": dict().fromkeys(self.task_names, list())
+            "branched_loss": {
+                task: list() for task in self.task_names
+            }
         }
 
 
@@ -224,26 +230,9 @@ class CHLitModule(L.LightningModule):
 
         self.val_scoring_losses["loss"].append(loss)
 
-        # self.val_loss(loss)
-        # self.log(
-        #     "val/loss", 
-        #     self.val_loss, 
-        #     batch_size=self.hparams.val_batch_size,
-        #     on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
-        # )
-
         for i, task in enumerate(self.task_names):
 
             self.val_scoring_losses["branched_loss"][task].append(branched_loss[i])
-
-            # self.val_branched_loss[task](branched_loss[i])
-
-            # self.log(
-            #     f"val/loss_{task}",
-            #     self.val_branched_loss[task],
-            #     batch_size=self.hparams.val_batch_size,
-            #     on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
-            # )
 
             for metric_name in self.metrics_names:
                 self.val_scoring_metrics[task][metric_name].append([outputs[:, i], labels])

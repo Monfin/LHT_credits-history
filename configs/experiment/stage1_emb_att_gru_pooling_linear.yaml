@@ -37,8 +37,8 @@ data:
 
   balance_sampler: balanced
 
-  train_batch_size: 64
-  val_batch_size: 128
+  train_batch_size: 32
+  val_batch_size: 64
 
 
 # set trainer params
@@ -68,13 +68,14 @@ model:
 
   task_names: 
     - tanh_output
+    - gelu_output
 
   task_weights:
+    - 1.0
     - 1.0
 
   metric_names: 
     - auroc
-    # - accuracy
 
   optimizer: 
     _target_: torch.optim.Adam
@@ -148,8 +149,8 @@ model:
             num_layers: 2
             activation_type: tanh
 
-          # - _target_: src.models.components.linear_blocks.linear_conv_blocks.LinearBlock
-          #   in_features: ${model.net.embedding_dim}
-          #   out_features: 1
-          #   num_layers: 2
-          #   activation_type: tanh
+          - _target_: src.models.components.linear_blocks.linear_conv_blocks.LinearBlock
+            in_features: ${model.net.embedding_dim}
+            out_features: 1
+            num_layers: 2
+            activation_type: gelu
