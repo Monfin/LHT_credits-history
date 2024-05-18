@@ -43,6 +43,9 @@ data:
 
 # set trainer params
 trainer:
+  # strategy: ddp_spawn
+  # plugins: fairscale.nn.data_parallel.FullyShardedDataParallel
+
   accelerator: cpu
 
   min_epochs: 1 # prevents early stopping

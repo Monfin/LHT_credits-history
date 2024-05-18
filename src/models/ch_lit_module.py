@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 
+from fairscale.nn.data_parallel import FullyShardedDataParallel as FSDP
+
 import numpy as np
 
 from torchmetrics import MaxMetric, MeanMetric
@@ -48,6 +50,7 @@ class CHLitModule(L.LightningModule):
 
         self.conditional_metric = conditional_metric
 
+        # self.net = FSDP(net)
         self.net = net
 
         self.criterion = nn.BCEWithLogitsLoss(

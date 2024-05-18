@@ -14,4 +14,4 @@ precision: bf16-mixed
 
 log_every_n_steps: 10
 
-gradient_clip_val: 0.3
+gradient_clip_val: 0.5
