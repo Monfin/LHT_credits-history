@@ -19,7 +19,7 @@ class SubLayer(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, attention: nn.Module, feed_forward: nn.Module, dropout: float = 0.3):
+    def __init__(self, attention: nn.Module, feed_forward: nn.Module, residual_dropout: float = 0.3):
         super().__init__()
 
         self.attn_layer = attention # z = x + dropout(attention(norm(x)))
@@ -34,11 +34,10 @@ class EncoderLayer(nn.Module):
             dict(
                 zip(
                     ["attention", "feed_forward"],
-                    clone_modules(SubLayer(self.d_model, dropout), 2)
+                    clone_modules(SubLayer(self.d_model, residual_dropout), 2)
                 )
             )
         )
-
 
     def forward(self, state: SingleForwardState) -> SingleForwardState:
         mask = state.mask
@@ -51,4 +50,46 @@ class EncoderLayer(nn.Module):
         return SingleForwardState(
             sequences=x,
             mask=mask
+        )
+
+
+class DecoderLayer(nn.Module):
+    def __init__(self, src_attention: nn.Module, tgt_attention: nn.Module, feed_forward: nn.Module, residual_dropout: float = 0.3):
+        super().__init__()
+
+        self.tgt_attn_layer = tgt_attention
+        self.src_attn_layer = src_attention
+        self.ff_layer = feed_forward
+
+        self.d_model = self.src_attn_layer.d_model
+
+        assert self.d_model == self.ff_layer.d_model, \
+            f"The size <{self.d_model}> of attention layer must be the same as size <{self.ff_layer.d_model}> of feed forward layer"
+
+        self.sub_layers = nn.ModuleDict(
+            dict(
+                zip(
+                    ["attention", "src_attention", "feed_forward"],
+                    clone_modules(SubLayer(self.d_model, residual_dropout), 3)
+                )
+            )
+        )
+
+    def forward(self, x: SingleForwardState, memory: SingleForwardState) -> SingleForwardState:
+
+        tgt_mask = x.mask
+        x = x.sequences
+
+        src_mask = memory.mask
+        memory = memory.sequences
+
+        x = self.sub_layers["attention"](x, lambda x: self.tgt_attn_layer(x, x, x, tgt_mask))
+
+        x = self.sub_layers["src_attention"](x, lambda x: self.src_attn_layer(x, memory, memory, src_mask))
+
+        x = self.sub_layers["feed_forward"](x, self.ff_layer)
+
+        return SingleForwardState(
+            sequences=x,
+            mask=tgt_mask
         )

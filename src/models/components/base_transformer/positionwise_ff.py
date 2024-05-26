@@ -6,6 +6,23 @@ from src.models.components.utils.activation_type_mapping import ACTIVATION_TYPE_
 from src.data.components.collate import SingleForwardState
 
 
+class Generator(nn.Module):
+    def __init__(self, d_model: int, out_size: int):
+        super().__init__()
+
+        self.projection = nn.Sequential(
+            nn.Linear(d_model, out_size),
+            nn.LogSoftmax(dim=-1)
+        )
+
+
+    def forward(self, x: SingleForwardState) -> SingleForwardState:
+        return SingleForwardState(
+            sequences=self.projection(x),
+            mask=x.mask
+        )
+
+
 class PositionwiseFeedForward(nn.Module):
     def __init__(self, d_model: int, d_ff: int = None, activation_type: str = "relu", dropout: float = 0.1):
         super().__init__()

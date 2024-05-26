@@ -28,13 +28,12 @@ class ScaledDotProductAttention(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model: int, n_heads: int = 1, attn_dropout: float = 0.0, dropout: float = 0.1):
+    def __init__(self, d_model: int, n_heads: int = 1, attn_dropout: float = 0.1):
         super().__init__()
 
         self.linears = clone_modules(nn.Linear(d_model, d_model * n_heads), 3)
 
         self.attention = ScaledDotProductAttention(d_model, attn_dropout)
-        self.dropout = nn.Dropout(dropout)
 
         self.out_block = nn.Linear(d_model * n_heads, d_model)
 
