@@ -163,7 +163,7 @@ class CHLitModule(L.LightningModule):
         x = ModelInput(
             numerical=batch.numerical,
             categorical=batch.categorical,
-            lengths=batch.lengths
+            mask=batch.mask
         )
 
         labels = batch.targets

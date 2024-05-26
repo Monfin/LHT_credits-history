@@ -12,16 +12,14 @@ class ModelBatch:
     categorical: Optional[torch.Tensor]
     targets: Optional[torch.Tensor]
     sample_indexes: Optional[List]
-    # mask: Optional[torch.Tensor]
-    lengths: Optional[torch.Tensor]
+    mask: Optional[torch.Tensor]
 
 
 @dataclass
 class ModelInput:
     numerical: Optional[torch.Tensor]
     categorical: Optional[torch.Tensor]
-    # mask: Optional[torch.Tensor]
-    lengths: Optional[torch.Tensor]
+    mask: Optional[torch.Tensor]
 
 
 @dataclass
@@ -33,7 +31,7 @@ class ModelOutput:
 @dataclass
 class SingleForwardState:
     sequences: Optional[torch.Tensor]
-    lengths: Optional[torch.Tensor]
+    mask: Optional[torch.Tensor]
 
 
 class Collator(ABC):
@@ -58,13 +56,13 @@ class BaseCollator(Collator):
         return padded_features
 
     def __call__(self, batch: List[Dict]) -> ModelBatch:
-        lengths = torch.as_tensor([item["length"] for item in batch])
+        lengths = torch.as_tensor([item["length"] for item in batch]).unsqueeze(dim=1)
         sample_indexes = [item["sample_index"] for item in batch]
 
         padded_numerical_features = self.get_padded_tensors(batch, "numerical")
         padded_categorical_features = self.get_padded_tensors(batch, "categorical")
         
-        # mask = padded_categorical_features.size(1) >= lengths
+        mask = torch.tile(torch.arange(self.max_seq_len), (lengths.size(0), 1)) >= lengths
 
         targets = torch.as_tensor([item["target"] for item in batch], dtype=torch.float32).unsqueeze(dim=-1)
 
@@ -73,5 +71,5 @@ class BaseCollator(Collator):
             categorical=padded_categorical_features, 
             targets=targets,
             sample_indexes=sample_indexes,
-            lengths=lengths
+            mask=mask
         )

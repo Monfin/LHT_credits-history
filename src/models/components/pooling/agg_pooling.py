@@ -18,11 +18,18 @@ def first_pooling(hidden_state: torch.Tensor, dim: int = 1):
     return hidden_state[:, 0, :] if dim == 1 else hidden_state[:, :, 0]
 
 
-def last_pooling(hidden_state: torch.Tensor, dim: int = 1):
+def last_pooling(hidden_state: torch.Tensor, lengths: torch.Tensor, dim: int = 1):
     assert len(hidden_state.size()) == 3, \
         "hidden state size should be (batch_size x num_seq x seq_len)"
+    
+    if dim == 1:
+        hidden_state = hidden_state[torch.arange(hidden_state.size(0)), lengths - 1, :] # (N, L, B)
+    elif dim == 2:
+        hidden_state = hidden_state[torch.arange(hidden_state.size(0)), :, lengths - 1] # (N, B, L)
+    else:
+        raise NotImplementedError("dim is not valid, select dim from the <[1, 2]>")
 
-    return hidden_state[:, -1, :] if dim == 1 else hidden_state[:, :, -1]
+    return hidden_state
 
 
 def avg_pooling(hidden_state: torch.Tensor, dim: int = 1):
@@ -100,7 +107,7 @@ class FirstLastPoolings(PoolingType):
 
 class FirstLastAvgPoolings(PoolingType):
     def __init__(self, dim: int = 1):
-        super(FirstLastPoolings, self).__init__()
+        super(FirstLastAvgPoolings, self).__init__()
 
         self.dim = dim
 
@@ -185,11 +192,13 @@ POOLING_MAPPING = {
     "first_last_avg": FirstLastAvgPoolings
 }
 
-
+    
 class ConvPooling(nn.Module):
     def __init__(
             self, 
+            emb_dim: int,
             pooling_type: str = "all", 
+            use_batch_norm: bool = True,
             dim: int = 1
         ) -> None:
         super(ConvPooling, self).__init__()
@@ -202,18 +211,15 @@ class ConvPooling(nn.Module):
         
         self.pooling_layer = POOLING_MAPPING[pooling_type](dim=dim)
 
-        if self.pooling_layer.num_poolings > 1:
-            self.agg_layer = nn.Conv1d(
-                in_channels=self.pooling_layer.num_poolings, 
-                out_channels=1, 
-                kernel_size=self.pooling_layer.num_poolings, 
-                padding="same",
-                bias=False
-            )
-        else:
-            self.agg_layer = nn.Identity()
+        self.agg_layer = nn.Conv1d(
+            in_channels=self.pooling_layer.num_poolings, 
+            out_channels=1, 
+            kernel_size=self.pooling_layer.num_poolings, 
+            padding="same",
+            bias=False
+        )
 
-        # self.batch_norm = nn.BatchNorm1d(num_features=self.pooling_layer.num_poolings)
+        self.batch_norm = nn.BatchNorm1d(emb_dim) if use_batch_norm else nn.Identity()
         
     def forward(self, hidden_state: SingleForwardState) -> ModelOutput:
         x = self.pooling_layer(hidden_state.sequences)

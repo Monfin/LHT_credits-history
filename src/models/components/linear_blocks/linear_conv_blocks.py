@@ -1,15 +1,11 @@
 import torch
 from torch import nn
-from typing import Optional, Union, List
+from typing import List
 
 from src.data.components.collate import ModelOutput
 
-ACTIVATION_TYPE_MAPPING = {
-    "tanh": nn.Tanh,
-    "gelu": nn.GELU,
-    "relu": nn.ReLU,
-    "none": nn.Identity
-}
+from src.models.components.utils.activation_type_mapping import ACTIVATION_TYPE_MAPPING
+
 
 def init_linear_block_weights(layer):
     if isinstance(layer, nn.Linear):
@@ -21,7 +17,7 @@ class LinearBlock(nn.Module):
             self, 
             in_features: int, 
             out_features: int = 1, 
-            num_layers: int = 3, 
+            num_layers: int = 2, 
             dropout_rate: float = 0.0, 
             activation_type: str = "tanh",
             use_batch_norm: bool = False,
@@ -33,9 +29,7 @@ class LinearBlock(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout_rate)
 
-        if activation_type is None:
-            self.act = ACTIVATION_TYPE_MAPPING["tanh"]
-        elif activation_type in ACTIVATION_TYPE_MAPPING.keys():
+        if activation_type in ACTIVATION_TYPE_MAPPING.keys():
             self.act = ACTIVATION_TYPE_MAPPING[activation_type]
         else: 
             NotImplementedError(f"activation_type must be in <{list(ACTIVATION_TYPE_MAPPING.keys())}>")

@@ -25,9 +25,11 @@ class GRUSeqToSeq(nn.Module):
 
     def forward(self, x: SingleForwardState) -> SingleForwardState:
 
+        lengths = (~x.mask).sum(dim=1)
+
         packed_sequences = torch.nn.utils.rnn.pack_padded_sequence(
             input=x.sequences, 
-            lengths=x.lengths, 
+            lengths=lengths, 
             batch_first=True, 
             enforce_sorted=False
         )
@@ -40,5 +42,5 @@ class GRUSeqToSeq(nn.Module):
 
         return SingleForwardState(
             sequences=padded_state,
-            lengths=x.lengths
+            mask=x.mask
         )

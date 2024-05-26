@@ -31,6 +31,7 @@ class EmbeddingLayer(nn.Module):
 
             self.embeddings.append(embedding)
 
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
         x = torch.concatenate(
@@ -86,6 +87,7 @@ class EncoderLayer(nn.Module):
         else: 
             self.num_bn = None
 
+
     def forward(self, inputs: ModelInput) -> SingleForwardState:
 
         embeddings = self.embeddings(inputs.categorical)
@@ -106,5 +108,5 @@ class EncoderLayer(nn.Module):
 
         return SingleForwardState(
             sequences=x, 
-            lengths=inputs.lengths
+            mask=inputs.mask
         )
