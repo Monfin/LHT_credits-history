@@ -1,0 +1,209 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py +experiment=example
+
+# defaults:
+#   - override /data: credits_history_dataset.yaml
+#   - override /model: embeddings_gru_pooling.yaml
+#   - override /trainer: cpu.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["credits_history", "simple_rnn"]
+
+seed: 12345
+
+# set data params
+data:
+  data_reader:
+    _target_: src.data.components.data_reader.DataReader
+    data_path: ${paths.data_dir}/serialized/serialized_first_part_v2
+
+  targets_reader: 
+    _target_: src.data.components.targets_indexes_reader.TargetsReader
+    targets_path: ${paths.data_dir}/targets/targets_dict.pickle
+
+  indexes_reader: 
+    _target_: src.data.components.targets_indexes_reader.IndexesReader
+    train_path: ${paths.data_dir}/indexes/ser_full_0_indexes/train_indexes.pickle
+    val_path: ${paths.data_dir}/indexes/ser_full_0_indexes/valid_indexes.pickle
+    test_path: null
+
+  collator:
+    _target_: src.data.components.collate.BaseCollator
+    max_seq_len: 50
+
+  balance_sampler: balanced
+
+  train_batch_size: 32
+  val_batch_size: 64
+
+
+# set trainer params
+trainer:
+  # strategy: ddp_spawn
+  # plugins: fairscale.nn.data_parallel.FullyShardedDataParallel
+
+  accelerator: cpu
+
+  min_epochs: 1 # prevents early stopping
+  max_epochs: 10
+
+  devices: 1
+
+  # mixed precision for extra speed-up
+  precision: bf16-mixed
+
+  log_every_n_steps: 10
+
+
+# set model params
+model:
+  _target_: src.models.ch_lit_module.CHLitModule
+  _recursive_: True
+
+  conditional_metric: ${conditional_metric}
+
+  train_batch_size: ${data.train_batch_size}
+  val_batch_size: ${data.val_batch_size}
+
+  task_names: 
+    - tanh_output
+
+  task_weights:
+    - 1.0
+
+  metric_names: 
+    - auroc
+
+  optimizer: 
+    _target_: torch.optim.Adam
+    _partial_: True
+    lr: 1.0e-3
+    weight_decay: 1.0e-6
+
+  scheduler:
+    _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+    _partial_: True
+    mode: max
+    factor: 0.1 # new_lr = factor & old_lr
+    patience: 2
+
+  net:
+    _target_: src.models.components.sequential_model.SequentialLitModel
+    embedding_dim: 16
+
+    layers:
+      ### Encoder layer (Embeddings)
+      - _target_: src.models.components.embedding.encoder_layer.EncoderLayer
+
+        numerical_features: ${data.features.numerical}
+        categorical_features: ${data.features.categorical}
+
+        embedding_dim: ${model.net.embedding_dim}
+
+        dropout_inputs: 0.3
+
+        non_linear: False
+        num_batch_norm: False
+
+        div_emb_dim: 2
+
+      
+      ### Base Transformer
+      - _target_: src.models.components.base_transformer.transformer.BaseTransformer
+
+        ### Encoder
+        encoder:
+          _target_: src.models.components.base_transformer.encoder_decoder.Encoder
+
+          n_layers: 1
+
+          encoder_layer: 
+            _target_: src.models.components.base_transformer.sub_layers.EncoderLayer
+
+            attention: 
+              _target_: src.models.components.base_transformer.multihead_attention.MultiHeadAttention
+
+              d_model: ${model.net.embedding_dim}
+
+              n_heads: 1
+
+              attn_dropout: 0.1
+
+            feed_forward:
+              _target_: src.models.components.base_transformer.positionwise_ff.PositionwiseFeedForward
+
+              d_model: ${model.net.embedding_dim}
+              d_ff: ${eval:${model.net.embedding_dim} * 2}
+
+              activation_type: relu
+              dropout: 0.3
+
+            residual_dropout: 0.5
+          
+        ### Decoder
+        decoder:
+          _target_: src.models.components.base_transformer.encoder_decoder.Decoder
+
+          n_layers: 1
+
+          decoder_layer: 
+            _target_: src.models.components.base_transformer.sub_layers.DecoderLayer
+
+            src_attention: 
+              _target_: src.models.components.base_transformer.multihead_attention.MultiHeadAttention
+
+              d_model: ${model.net.embedding_dim}
+
+              n_heads: 1
+
+              attn_dropout: 0.1
+
+            tgt_attention: 
+              _target_: src.models.components.base_transformer.multihead_attention.MultiHeadAttention
+
+              d_model: ${model.net.embedding_dim}
+
+              n_heads: 1
+
+              attn_dropout: 0.1
+
+            feed_forward:
+              _target_: src.models.components.base_transformer.positionwise_ff.PositionwiseFeedForward
+
+              d_model: ${model.net.embedding_dim}
+              d_ff: ${eval:${model.net.embedding_dim} * 2}
+
+              activation_type: relu
+              dropout: 0.3
+
+            residual_dropout: 0.5
+
+
+      ### Decoder layer (GRU)
+      - _target_: src.models.components.aggregators.gru_aggregator.GRUAggregator
+
+        hidden_size: ${model.net.embedding_dim}
+
+        num_layers_gru: 1
+        bidirectional: False
+
+        dropout_gru: 0.0
+
+
+      ### Use main sequence only
+      - _target_: src.models.components.seq_to_seq.main_seq.UseMainSeq
+
+
+      ### Multioutput Linear Block
+      - _target_: src.models.components.linear_blocks.linear_conv_blocks.MultiTaskLinearBlock
+        # you must specify heads in the same order like outputs_names
+        heads:
+          - _target_: src.models.components.linear_blocks.linear_conv_blocks.LinearBlock
+            in_features: ${model.net.embedding_dim}
+            out_features: 1
+            num_layers: 2
+            activation_type: tanh
