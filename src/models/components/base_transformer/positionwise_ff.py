@@ -18,13 +18,13 @@ class Generator(nn.Module):
 
     def forward(self, x: SingleForwardState) -> SingleForwardState:
         return SingleForwardState(
-            sequences=self.projection(x),
+            sequences=self.projection(x.sequences),
             mask=x.mask
         )
 
 
 class PositionwiseFeedForward(nn.Module):
-    def __init__(self, d_model: int, d_ff: int = None, activation_type: str = "relu", dropout: float = 0.1):
+    def __init__(self, d_model: int, d_ff: int = None, activation_type: str = "relu"):
         super().__init__()
 
         d_ff = d_ff if d_ff is not None else d_model * 2
@@ -37,7 +37,6 @@ class PositionwiseFeedForward(nn.Module):
         self.position_wise_ff = nn.Sequential(
             nn.Linear(d_model, d_ff),
             self.act(),
-            nn.Dropout(dropout),
             nn.Linear(d_ff, d_model)
         )
 
