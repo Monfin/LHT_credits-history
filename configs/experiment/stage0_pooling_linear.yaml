@@ -37,8 +37,8 @@ data:
 
   balance_sampler: balanced
 
-  train_batch_size: 32
-  val_batch_size: 32
+  train_batch_size: 128
+  val_batch_size: 128
 
 
 effective_batch_size: 256
@@ -91,8 +91,8 @@ model:
     embedding_dim: 16
 
     layers:
-      ### Encoder layer (Embeddings)
-      - _target_: src.models.components.embedding.encoder_layer.EncoderLayer
+      ### Identity Encoder layer (linears)
+      - _target_: src.models.components.embedding.identity_layer.IdentityEncoderLayer
 
         numerical_features: ${data.features.numerical}
         categorical_features: ${data.features.categorical}
@@ -103,17 +103,6 @@ model:
 
         non_linear: False
         num_batch_norm: True
-
-
-      ### Decoder layer (GRU)
-      - _target_: src.models.components.seq_to_seq.gru_seq_to_seq.GRUSeqToSeq
-
-        hidden_size: ${model.net.embedding_dim}
-
-        num_layers_gru: 2
-        bidirectional: False
-
-        dropout_gru: 0.0
 
 
       ### Pooling layer (Convolutional & Pooling)

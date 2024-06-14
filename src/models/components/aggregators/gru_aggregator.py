@@ -34,7 +34,7 @@ class GRUAggregator(nn.Module):
             enforce_sorted=False
         )
 
-        _, hidden_state = self.gru(packed_sequences)
+        _, hidden_state = self.gru(packed_sequences) # h ~ (num_layers, batch_size, hidden_size)
 
         return SingleForwardState(
             sequences=hidden_state[-1],

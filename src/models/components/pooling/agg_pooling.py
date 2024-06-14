@@ -198,7 +198,7 @@ class ConvPooling(nn.Module):
             self, 
             emb_dim: int,
             pooling_type: str = "all", 
-            use_batch_norm: bool = True,
+            use_batch_norm: bool = False,
             dim: int = 1
         ) -> None:
         super(ConvPooling, self).__init__()
@@ -220,12 +220,15 @@ class ConvPooling(nn.Module):
         )
 
         self.batch_norm = nn.BatchNorm1d(emb_dim) if use_batch_norm else nn.Identity()
+
         
-    def forward(self, hidden_state: SingleForwardState) -> ModelOutput:
+    def forward(self, hidden_state: SingleForwardState) -> SingleForwardState:
+
         x = self.pooling_layer(hidden_state.sequences)
         x = self.agg_layer(x).squeeze(self.dim)
+        x = self.batch_norm(x)
 
-        return ModelOutput(
-            representations=x,
-            logits=None
+        return SingleForwardState(
+            sequences=x,
+            mask=hidden_state.mask
         )

@@ -3,24 +3,46 @@ from torch import nn
 
 from src.models.components.utils.clone_modules import clone_modules
 
-from src.data.components.collate import SingleForwardState
+from src.data.components.collate import SingleForwardState, TwoBranchForwardState
 
 
 class SubLayer(nn.Module):
     """ Residual connection followed by a layer norm """
     def __init__(self, d_model: int, dropout: float = 0.5):
-        super().__init__()
+        super(SubLayer, self).__init__()
 
         self.layer_norm = nn.LayerNorm(d_model)
+
         self.dropout = nn.Dropout(dropout)
+
 
     def forward(self, x: torch.Tensor, sub_layer: nn.Module) -> torch.Tensor:
         return x + self.dropout(sub_layer(self.layer_norm(x)))
+    
+
+class LUNASubLayer(nn.Module):
+    """ Residual connection followed by a layer norm """
+    def __init__(self, d_model: int, dropout: float = 0.5):
+        super(LUNASubLayer, self).__init__()
+
+        self.main_layer_norm = nn.LayerNorm(d_model)
+        self.agg_layer_norm = nn.LayerNorm(d_model)
+
+        self.dropout = nn.Dropout(dropout)
+
+
+    def forward(self, context: torch.Tensor, aggregates: torch.Tensor, sub_layer: nn.Module) -> torch.Tensor:
+        _context, _aggregates = sub_layer(self.main_layer_norm(context), self.agg_layer_norm(aggregates))
+
+        context += self.dropout(_context)
+        aggregates += _aggregates
+
+        return context, aggregates
 
 
 class EncoderLayer(nn.Module):
     def __init__(self, attention: nn.Module, feed_forward: nn.Module, residual_dropout: float = 0.3):
-        super().__init__()
+        super(EncoderLayer, self).__init__()
 
         self.attn_layer = attention # z = x + dropout(attention(norm(x)))
         self.ff_layer = feed_forward # y = z + dropout(ff(norm(z)))
@@ -41,21 +63,65 @@ class EncoderLayer(nn.Module):
 
     def forward(self, state: SingleForwardState) -> SingleForwardState:
         mask = state.mask
-        x = state.sequences
+        context = state.sequences
 
-        x = self.sub_layers["attention"](x, lambda x: self.attn_layer(x, x, x, mask))
+        context = self.sub_layers["attention"](
+            context, 
+            lambda context: self.attn_layer(context, context, context, mask)
+        )
 
-        x = self.sub_layers["feed_forward"](x, self.ff_layer)
+        x = self.sub_layers["feed_forward"](context, self.ff_layer)
 
         return SingleForwardState(
             sequences=x,
+            mask=mask
+        )
+    
+
+class LUNAEncoderLayer(nn.Module):
+    def __init__(self, luna: nn.Module, feed_forward: nn.Module, residual_dropout: float = 0.3):
+        super(LUNAEncoderLayer, self).__init__()
+
+        self.luna_layer = luna # z = x + dropout(attention(norm(x)))
+        self.ff_layer = feed_forward # y = z + dropout(ff(norm(z)))
+
+        self.d_model = self.luna_layer.d_model
+
+        assert self.d_model == self.ff_layer.d_model, \
+            f"The size <{self.d_model}> of attention layer must be the same as size <{self.ff_layer.d_model}> of feed forward layer"
+
+        self.sub_layers = nn.ModuleDict(
+            dict(
+                zip(
+                    ["luna", "feed_forward"],
+                    [LUNASubLayer(self.d_model, residual_dropout), SubLayer(self.d_model, residual_dropout)]
+                )
+            )
+        )
+
+    def forward(self, state: TwoBranchForwardState) -> TwoBranchForwardState:
+        mask = state.mask
+        context = state.main_sequences
+        aggregates = state.aggregates
+
+        context, aggregates = self.sub_layers["luna"](
+            context, 
+            aggregates,
+            lambda context, aggregates: self.luna_layer(context, context, context, aggregates, mask)
+        )
+
+        x = self.sub_layers["feed_forward"](context, self.ff_layer)
+
+        return TwoBranchForwardState(
+            main_sequences=x,
+            aggregates=aggregates,
             mask=mask
         )
 
 
 class DecoderLayer(nn.Module):
     def __init__(self, src_attention: nn.Module, tgt_attention: nn.Module, feed_forward: nn.Module, residual_dropout: float = 0.3):
-        super().__init__()
+        super(DecoderLayer, self).__init__()
 
         self.tgt_attn_layer = tgt_attention
         self.src_attn_layer = src_attention

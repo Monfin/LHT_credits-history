@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - data: credits_history_dataset.yaml
-  - model: embeddings_gru_pooling.yaml
+  - model: linformer_gru.yaml
   - trainer: cpu.yaml
   - logger: tensorboard.yaml # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - experiment: null
@@ -35,4 +35,4 @@ ckpt_path: null
 seed: 12345
 
 # monitored metric for early stopping
-conditional_metric: "val/auroc_avg_best"
+conditional_metric: "val/gini_avg_best"

@@ -1,0 +1,222 @@
+task_name: train
+tags:
+- credits_history
+- gru
+train: true
+test: true
+ckpt_path: null
+seed: 12345
+conditional_metric: val/gini_avg_best
+data:
+  features:
+    numerical:
+    - enc_paym_log_mob24avg_by_mob12avg
+    - enc_paym_mob12ema
+    - enc_paym_mob24ema
+    - pre_loans_ema
+    categorical:
+      pre_pterm:
+      - 18
+      - 8
+      pre_fterm:
+      - 17
+      - 8
+      pre_loans_credit_limit:
+      - 20
+      - 8
+      pre_loans_next_pay_summ:
+      - 7
+      - 4
+      pre_loans_outstanding:
+      - 5
+      - 2
+      pre_loans_max_overdue_sum:
+      - 3
+      - 2
+      pre_loans_credit_cost_rate:
+      - 14
+      - 8
+      enc_loans_credit_status:
+      - 7
+      - 4
+      enc_loans_credit_type:
+      - 6
+      - 4
+      enc_paym_max:
+      - 4
+      - 2
+      enc_paym_mob3avg:
+      - 13
+      - 8
+      enc_paym_mob6avg:
+      - 22
+      - 8
+      enc_paym_mob12avg:
+      - 40
+      - 16
+      enc_paym_mob24avg:
+      - 76
+      - 32
+      pre_util_masked:
+      - 20
+      - 8
+      pre_over2limit_masked:
+      - 20
+      - 8
+      pre_maxover2limit_masked:
+      - 20
+      - 8
+      pre_loans5:
+      - 2
+      - 2
+      pre_loans5_30:
+      - 2
+      - 2
+      pre_loans30_60:
+      - 2
+      - 2
+      pre_loans60_90:
+      - 2
+      - 2
+      pre_loans90:
+      - 2
+      - 2
+  _recursive_: false
+  _target_: src.data.lightning_data_module.LitDataModule
+  data_reader:
+    _target_: src.data.components.data_reader.DataReader
+    data_path: ${paths.data_dir}/serialized/serialized_first_part_v4
+  targets_reader:
+    _target_: src.data.components.targets_indexes_reader.TargetsReader
+    targets_path: ${paths.data_dir}/targets/targets_dict.pickle
+  indexes_reader:
+    _target_: src.data.components.targets_indexes_reader.IndexesReader
+    train_path: ${paths.data_dir}/indexes/ser_full_0_indexes/train_indexes.pickle
+    val_path: ${paths.data_dir}/indexes/ser_full_0_indexes/valid_indexes.pickle
+    test_path: null
+  collator:
+    _target_: src.data.components.collate.BaseCollator
+    max_seq_len: 20
+  balance_sampler: balanced
+  n_samples: 10000
+  train_batch_size: 32
+  val_batch_size: 32
+  pin_memory: true
+  num_workers: 0
+  persistent_workers: false
+model:
+  _target_: src.models.ch_lit_module.CHLitModule
+  _recursive_: true
+  conditional_metric: ${conditional_metric}
+  train_batch_size: ${data.train_batch_size}
+  val_batch_size: ${data.val_batch_size}
+  task_names:
+  - base_output
+  task_weights:
+  - 1.0
+  metric_names:
+  - gini
+  optimizer:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: 0.001
+    weight_decay: 1.0e-05
+  scheduler:
+    _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+    _partial_: true
+    mode: max
+    factor: 0.1
+    patience: 3
+  net:
+    _target_: src.models.components.sequential_model.SequentialLitModel
+    embedding_dim: 16
+    layers:
+    - _target_: src.models.components.embedding.encoder_layer.EncoderLayer
+      numerical_features: ${data.features.numerical}
+      categorical_features: ${data.features.categorical}
+      embedding_dim: ${model.net.embedding_dim}
+      dropout_inputs: 0.3
+      non_linear: false
+      num_batch_norm: true
+    - _target_: src.models.components.seq_to_seq.gru_seq_to_seq.GRUSeqToSeq
+      hidden_size: ${model.net.embedding_dim}
+      num_layers_gru: 2
+      bidirectional: false
+      dropout_gru: 0.0
+    - _target_: src.models.components.pooling.agg_pooling.ConvPooling
+      emb_dim: ${model.net.embedding_dim}
+      pooling_type: all
+      use_batch_norm: false
+    - _target_: src.models.components.linear_blocks.linear_conv_blocks.MultiTaskLinearBlock
+      heads:
+      - _target_: src.models.components.linear_blocks.linear_conv_blocks.LinearBlock
+        in_features: ${model.net.embedding_dim}
+        out_features: 1
+        num_layers: 2
+        activation_type: tanh
+  compile: false
+trainer:
+  _target_: lightning.pytorch.trainer.Trainer
+  default_root_dir: ${paths.output_dir}
+  min_epochs: 1
+  max_epochs: 20
+  accelerator: cpu
+  devices: 1
+  check_val_every_n_epoch: 1
+  deterministic: false
+  precision: bf16-mixed
+  log_every_n_steps: 30
+  gradient_clip_val: 0.5
+  accumulate_grad_batches: ${eval:${effective_batch_size} // ${data.train_batch_size}}
+logger:
+  tensorboard:
+    _target_: lightning.pytorch.loggers.tensorboard.TensorBoardLogger
+    save_dir: ${paths.output_dir}/tensorboard/
+    name: null
+    log_graph: false
+    default_hp_metric: true
+    prefix: ''
+effective_batch_size: 256
+callbacks:
+  model_checkpoint:
+    _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    dirpath: ${paths.output_dir}/checkpoints
+    filename: epoch_{epoch:03d}
+    monitor: ${conditional_metric}
+    verbose: false
+    save_last: true
+    save_top_k: 1
+    mode: max
+    auto_insert_metric_name: false
+    save_weights_only: false
+    every_n_train_steps: null
+    train_time_interval: null
+    every_n_epochs: null
+    save_on_train_epoch_end: null
+  early_stopping:
+    _target_: lightning.pytorch.callbacks.EarlyStopping
+    monitor: ${conditional_metric}
+    min_delta: 0.0
+    patience: 10
+    verbose: false
+    mode: max
+    strict: true
+    check_finite: true
+    stopping_threshold: null
+    divergence_threshold: null
+    check_on_train_epoch_end: null
+  model_summary:
+    _target_: lightning.pytorch.callbacks.RichModelSummary
+    max_depth: -1
+  rich_progress_bar:
+    _target_: lightning.pytorch.callbacks.RichProgressBar
+  lr_monitor:
+    _target_: lightning.pytorch.callbacks.LearningRateMonitor
+    logging_interval: epoch
+    log_momentum: true
+paths:
+  root_dir: ${oc.env:PROJECT_ROOT}
+  data_dir: ${paths.root_dir}/data/credits-history
+  log_dir: ${paths.root_dir}/logs/
+  output_dir: ${hydra:runtime.output_dir}
+  work_dir: ${hydra:runtime.cwd}

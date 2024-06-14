@@ -34,6 +34,13 @@ class SingleForwardState:
     mask: Optional[torch.Tensor]
 
 
+@dataclass
+class TwoBranchForwardState:
+    main_sequences: Optional[torch.Tensor]
+    aggregates: Optional[torch.Tensor]
+    mask: Optional[torch.Tensor]
+
+
 class Collator(ABC):
     def __call__(self, batch: List[Dict]) -> ModelBatch:
         raise NotImplementedError

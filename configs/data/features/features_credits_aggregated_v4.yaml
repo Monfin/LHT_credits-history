@@ -1,0 +1,72 @@
+numerical:
+- enc_paym_log_mob24avg_by_mob12avg
+- enc_paym_mob12ema
+- enc_paym_mob24ema
+- pre_loans_ema
+categorical:
+  pre_pterm:
+  - 18
+  - 8
+  pre_fterm:
+  - 17
+  - 8
+  pre_loans_credit_limit:
+  - 20
+  - 8
+  pre_loans_next_pay_summ:
+  - 7
+  - 4
+  pre_loans_outstanding:
+  - 5
+  - 2
+  pre_loans_max_overdue_sum:
+  - 3
+  - 2
+  pre_loans_credit_cost_rate:
+  - 14
+  - 8
+  enc_loans_credit_status:
+  - 7
+  - 4
+  enc_loans_credit_type:
+  - 6
+  - 4
+  enc_paym_max:
+  - 4
+  - 2
+  enc_paym_mob3avg:
+  - 13
+  - 8
+  enc_paym_mob6avg:
+  - 22
+  - 8
+  enc_paym_mob12avg:
+  - 40
+  - 16
+  enc_paym_mob24avg:
+  - 76
+  - 32
+  pre_util_masked:
+  - 20
+  - 8
+  pre_over2limit_masked:
+  - 20
+  - 8
+  pre_maxover2limit_masked:
+  - 20
+  - 8
+  pre_loans5:
+  - 2
+  - 2
+  pre_loans5_30:
+  - 2
+  - 2
+  pre_loans30_60:
+  - 2
+  - 2
+  pre_loans60_90:
+  - 2
+  - 2
+  pre_loans90:
+  - 2
+  - 2

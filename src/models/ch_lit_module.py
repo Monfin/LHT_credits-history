@@ -201,14 +201,14 @@ class CHLitModule(L.LightningModule):
                 f"train/loss_{task}",
                 self.train_branched_loss[task],
                 batch_size=self.hparams.train_batch_size,
-                on_step=True, on_epoch=True, prog_bar=True, sync_dist=False
+                on_step=False, on_epoch=True, prog_bar=True, sync_dist=False
             )
 
             self.log(
                 f"train/batch_cnt_ones_{task}",
                 sum(labels == 1).type(torch.float32),
                 batch_size=self.hparams.train_batch_size,
-                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
+                on_step=False, on_epoch=True, prog_bar=True, sync_dist=True
             )
 
             for metric_name in self.metrics_names:
@@ -220,7 +220,7 @@ class CHLitModule(L.LightningModule):
                     self.train_metrics[task][metric_name], 
                     # self.train_metrics[task][metric_name](outputs[:, i], labels),
                     batch_size=self.hparams.train_batch_size,
-                    on_step=True, on_epoch=True, prog_bar=True, sync_dist=False
+                    on_step=False, on_epoch=True, prog_bar=True, sync_dist=False
                 )
 
         return {"loss": loss}

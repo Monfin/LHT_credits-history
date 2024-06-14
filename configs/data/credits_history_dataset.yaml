@@ -1,5 +1,5 @@
 defaults:
-  - features: features_credits_aggregated_v2.yaml
+  - features: features_credits_aggregated_v4.yaml
   - _self_
 
 _recursive_: False
@@ -8,7 +8,7 @@ _target_: src.data.lightning_data_module.LitDataModule
 
 data_reader:
   _target_: src.data.components.data_reader.DataReader
-  data_path: ${paths.data_dir}/serialized/serialized_first_part_v2
+  data_path: ${paths.data_dir}/serialized/serialized_first_part_v4
 
 targets_reader: 
   _target_: src.data.components.targets_indexes_reader.TargetsReader
@@ -22,7 +22,7 @@ indexes_reader:
 
 collator:
   _target_: src.data.components.collate.BaseCollator
-  max_seq_len: 50
+  max_seq_len: 40
 
 balance_sampler: balanced
 n_samples: 10_000

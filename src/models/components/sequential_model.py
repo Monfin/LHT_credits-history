@@ -9,7 +9,7 @@ class SequentialLitModel(nn.Module):
             self, 
             layers: List[nn.Module],
             embedding_dim: int = 32
-        ) -> None:
+    ) -> None:
         super(SequentialLitModel, self).__init__()
 
         self.layers = nn.Sequential(*layers)

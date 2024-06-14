@@ -8,39 +8,7 @@ from src.data.components.collate import ModelInput, SingleForwardState
 from einops import rearrange
 
 
-class EmbeddingLayer(nn.Module):
-    def __init__(
-            self,
-            categorical_features: dict
-        ) -> None:
-        super(EmbeddingLayer, self).__init__()
-
-        self.categorical_features = categorical_features
-
-        self.embeddings = nn.ModuleList()
-
-        for vocab_size, emb_dim in self.categorical_features.values():
-
-            embedding = nn.Embedding(
-                num_embeddings=vocab_size, 
-                embedding_dim=emb_dim
-            )
-
-            nn.init.xavier_normal_(embedding.weight, gain=nn.init.calculate_gain('relu'))
-
-            self.embeddings.append(embedding)
-
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        
-        x = torch.concatenate(
-            [embedding(x[..., idx]) for idx, embedding in enumerate(self.embeddings)], dim=-1
-        ) # size = (B, L, first_emb_dim)
-        
-        return x
-
-    
-class EncoderLayer(nn.Module):
+class IdentityEncoderLayer(nn.Module):
     def __init__(
             self,
             numerical_features: List[str],
@@ -50,23 +18,17 @@ class EncoderLayer(nn.Module):
             non_linear: bool = False,
             num_batch_norm: bool = True
         ) -> None:
-        super(EncoderLayer, self).__init__()
+        super(IdentityEncoderLayer, self).__init__()
 
         self.dropout = nn.Dropout(p=dropout_inputs)
 
         self.numerical_features = numerical_features
         self.categorical_features = categorical_features
 
-        _first_emb_dim = sum([shape[-1] for shape in self.categorical_features.values()])
-
-        self.embeddings = EmbeddingLayer(
-            categorical_features=categorical_features
-        )
-
         if non_linear:
             self.out_linear_block = nn.Sequential(
                 nn.Linear(
-                    _first_emb_dim + len(self.numerical_features), 
+                    len(self.categorical_features) + len(self.numerical_features), 
                     embedding_dim
                 ),
                 nn.ReLU(),
@@ -75,7 +37,7 @@ class EncoderLayer(nn.Module):
             )
         else:
             self.out_linear_block = nn.Linear(
-                _first_emb_dim + len(self.numerical_features), 
+                len(self.categorical_features) + len(self.numerical_features), 
                 embedding_dim
             )
 
@@ -87,8 +49,6 @@ class EncoderLayer(nn.Module):
 
     def forward(self, inputs: ModelInput) -> SingleForwardState:
 
-        embeddings = self.embeddings(inputs.categorical)
-
         if self.num_bn is None:
             x_num = inputs.numerical
         else:
@@ -98,7 +58,7 @@ class EncoderLayer(nn.Module):
 
             x_num = rearrange(x_num, "N H L -> N L H")
 
-        x = torch.concatenate((x_num, embeddings), dim=-1)
+        x = torch.concatenate((x_num, inputs.categorical), dim=-1)
 
         x = self.dropout(x)
         x = self.out_linear_block(x)

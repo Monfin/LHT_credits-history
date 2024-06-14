@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 rootutils.setup_root(search_from=__file__, indicator=".project-root", pythonpath=True)
 
 OmegaConf.register_new_resolver("eval", eval)
+OmegaConf.register_new_resolver("len", len)
 # OmegaConf.register_new_resolver("bool2int", lambda x: 2 if x else 1) # to bidirectional
 # ------------------------------------------------------------------------------------ #
 # the setup_root above is equivalent to:
