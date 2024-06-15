@@ -26,7 +26,7 @@ class ScaledDotProductAttention(nn.Module):
 
         if mask is not None:
             # mask (B, 1, L, 1) ~ same mask applied to all h heads and all L or d_k sequences
-            attn.masked_fill_(~mask.unsqueeze(dim=1).unsqueeze(dim=-1), -1.0e9)
+            attn.masked_fill_(~mask, -1.0e9)
         
         attn = self.softmax_dropout(attn)
 
@@ -80,7 +80,7 @@ class MultiHeadAttention(nn.Module):
         else:
             key = key.transpose(-2, -1)
 
-        context, _ = self.attention(query, key, value, mask=mask)
+        context, _ = self.attention(query, key, value, mask)
 
         # (B, h, L, d)
 

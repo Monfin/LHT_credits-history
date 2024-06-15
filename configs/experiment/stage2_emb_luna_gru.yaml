@@ -109,21 +109,19 @@ model:
 
         ### Encoder
         encoder:
-          _target_: src.models.components.base_transformer.encoder_decoder.Encoder
+          _target_: src.models.components.base_transformer.encoder_decoder.LUNAEncoder
 
           n_layers: 1
 
-          encoder_layer: 
-            _target_: src.models.components.base_transformer.sub_layers.EncoderLayer
+          n_aggregates: 8
 
-            attention: 
-              _target_: src.models.components.base_transformer.multihead_attention.MultiHeadAttention
+          luna_encoder_layer: 
+            _target_: src.models.components.base_transformer.sub_layers.LUNAEncoderLayer
+
+            luna: 
+              _target_: src.models.components.base_transformer.multihead_attention.LinearUnifiedNestedAttention
 
               d_model: ${model.net.embedding_dim}
-
-              seq_len: ${data.collator.max_seq_len}
-
-              d_proj: ${eval:${model.net.embedding_dim} // 4}
 
               n_heads: 4
 
@@ -138,6 +136,10 @@ model:
               activation_type: relu
 
             residual_dropout: 0.3
+
+
+      ### Use main sequence only
+      - _target_: src.models.components.seq_to_seq.states_transformation.TBFS2SFS
 
 
       ### Decoder layer (GRU)

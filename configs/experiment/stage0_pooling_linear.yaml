@@ -113,7 +113,7 @@ model:
 
       
       ### Use main sequence only
-      - _target_: src.models.components.seq_to_seq.main_seq.UseMainSeq
+      - _target_: src.models.components.seq_to_seq.states_transformation.SFS2ModelOutput
 
 
       ### Multioutput Linear Block

@@ -22,22 +22,21 @@ class SubLayer(nn.Module):
 
 class LUNASubLayer(nn.Module):
     """ Residual connection followed by a layer norm """
-    def __init__(self, d_model: int, dropout: float = 0.5):
+    def __init__(self, d_model: int, main_dropout: float = 0.3, agg_dropout: float = 0.3):
         super(LUNASubLayer, self).__init__()
 
         self.main_layer_norm = nn.LayerNorm(d_model)
         self.agg_layer_norm = nn.LayerNorm(d_model)
 
-        self.dropout = nn.Dropout(dropout)
+        self.main_dropout = nn.Dropout(main_dropout)
+        self.agg_dropout = nn.Dropout(agg_dropout)
 
 
     def forward(self, context: torch.Tensor, aggregates: torch.Tensor, sub_layer: nn.Module) -> torch.Tensor:
+
         _context, _aggregates = sub_layer(self.main_layer_norm(context), self.agg_layer_norm(aggregates))
 
-        context += self.dropout(_context)
-        aggregates += _aggregates
-
-        return context, aggregates
+        return context + self.main_dropout(_context), aggregates + self.agg_dropout(_aggregates)
 
 
 class EncoderLayer(nn.Module):
@@ -62,7 +61,7 @@ class EncoderLayer(nn.Module):
         )
 
     def forward(self, state: SingleForwardState) -> SingleForwardState:
-        mask = state.mask
+        mask = state.mask.unsqueeze(dim=1).unsqueeze(dim=-1)
         context = state.sequences
 
         context = self.sub_layers["attention"](
@@ -74,7 +73,7 @@ class EncoderLayer(nn.Module):
 
         return SingleForwardState(
             sequences=x,
-            mask=mask
+            mask=state.mask
         )
     
 
@@ -100,7 +99,7 @@ class LUNAEncoderLayer(nn.Module):
         )
 
     def forward(self, state: TwoBranchForwardState) -> TwoBranchForwardState:
-        mask = state.mask
+        mask = state.mask.unsqueeze(dim=1).unsqueeze(dim=1)
         context = state.main_sequences
         aggregates = state.aggregates
 
@@ -115,7 +114,7 @@ class LUNAEncoderLayer(nn.Module):
         return TwoBranchForwardState(
             main_sequences=x,
             aggregates=aggregates,
-            mask=mask
+            mask=state.mask
         )
 
 
