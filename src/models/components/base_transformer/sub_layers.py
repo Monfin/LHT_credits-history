@@ -78,7 +78,7 @@ class EncoderLayer(nn.Module):
     
 
 class LUNAEncoderLayer(nn.Module):
-    def __init__(self, luna: nn.Module, feed_forward: nn.Module, residual_dropout: float = 0.3):
+    def __init__(self, luna: nn.Module, feed_forward: nn.Module = None, residual_dropout: float = 0.3):
         super(LUNAEncoderLayer, self).__init__()
 
         self.luna_layer = luna # z = x + dropout(attention(norm(x)))
@@ -86,17 +86,26 @@ class LUNAEncoderLayer(nn.Module):
 
         self.d_model = self.luna_layer.d_model
 
-        assert self.d_model == self.ff_layer.d_model, \
-            f"The size <{self.d_model}> of attention layer must be the same as size <{self.ff_layer.d_model}> of feed forward layer"
+        if self.ff_layer is not None:
+            assert self.d_model == self.ff_layer.d_model, \
+                f"The size <{self.d_model}> of attention layer must be the same as size <{self.ff_layer.d_model}> of feed forward layer"
 
-        self.sub_layers = nn.ModuleDict(
-            dict(
-                zip(
-                    ["luna", "feed_forward"],
-                    [LUNASubLayer(self.d_model, residual_dropout), SubLayer(self.d_model, residual_dropout)]
+            self.sub_layers = nn.ModuleDict(
+                dict(
+                    zip(
+                        ["luna", "feed_forward"],
+                        [LUNASubLayer(self.d_model, residual_dropout), SubLayer(self.d_model, residual_dropout)]
+                    )
                 )
             )
-        )
+        else:
+            self.sub_layers = nn.ModuleDict(
+                {
+                    "luna": LUNASubLayer(self.d_model, residual_dropout)
+                    
+                }
+            )
+
 
     def forward(self, state: TwoBranchForwardState) -> TwoBranchForwardState:
         mask = state.mask.unsqueeze(dim=1).unsqueeze(dim=1)
@@ -109,10 +118,11 @@ class LUNAEncoderLayer(nn.Module):
             lambda context, aggregates: self.luna_layer(context, context, context, aggregates, mask)
         )
 
-        x = self.sub_layers["feed_forward"](context, self.ff_layer)
+        if self.ff_layer is not None:
+            context = self.sub_layers["feed_forward"](context, self.ff_layer)
 
         return TwoBranchForwardState(
-            main_sequences=x,
+            main_sequences=context,
             aggregates=aggregates,
             mask=state.mask
         )

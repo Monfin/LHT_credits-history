@@ -1,10 +1,6 @@
 import torch
 from torch import nn
 
-from fairscale.nn.data_parallel import FullyShardedDataParallel as FSDP
-
-import numpy as np
-
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification import BinaryAccuracy, BinaryAUROC
 from src.utils.metrics import GINI

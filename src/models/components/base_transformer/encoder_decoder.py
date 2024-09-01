@@ -66,14 +66,14 @@ class LUNAEncoder(nn.Module):
         self.agg_layer_norm = nn.LayerNorm(luna_encoder_layer.d_model)
         
         self.aggregates = nn.init.normal_(
-            nn.Parameter(torch.Tensor(n_aggregates, luna_encoder_layer.d_model), requires_grad=True), 
+            nn.Parameter(torch.Tensor(1, n_aggregates, luna_encoder_layer.d_model), requires_grad=True), 
             mean=0.0, 
             std=luna_encoder_layer.d_model ** (-0.5)
         )
 
 
     def forward(self, x: SingleForwardState) -> TwoBranchForwardState:
-        aggregates = self.aggregates.unsqueeze(dim=0).expand(x.sequences.size(0), -1, -1)
+        aggregates = self.aggregates.expand(x.sequences.size(0), -1, -1)
 
         x = TwoBranchForwardState(
             main_sequences=x.sequences,

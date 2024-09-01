@@ -7,7 +7,7 @@ defaults:
   - data: credits_history_dataset.yaml
   - model: linformer_gru.yaml
   - trainer: cpu.yaml
-  - logger: tensorboard.yaml # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
+  - logger: mlflow.yaml # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - experiment: null
   - callbacks: default.yaml
   - paths: default.yaml

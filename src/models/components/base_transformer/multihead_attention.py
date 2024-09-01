@@ -46,8 +46,7 @@ class MultiHeadAttention(nn.Module):
         self.seq_len = seq_len
 
         if self.seq_len is not None:
-            if d_proj is None:
-                d_proj = self.seq_len // 4
+            d_proj = self.seq_len // 4 if d_proj is None else d_proj
 
             self.E_projection = nn.Linear(self.seq_len, d_proj)
             self.F_projection = nn.Linear(self.seq_len, d_proj)

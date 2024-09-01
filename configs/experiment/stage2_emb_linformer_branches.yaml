@@ -15,6 +15,11 @@ tags: ["credits_history", "linformer"]
 
 seed: 12345
 
+logger:
+  mlflow:
+    experiment_name: linformer_emb16
+    run_name: credits_history
+
 # set data params
 data:
   data_reader:
@@ -41,9 +46,12 @@ data:
   val_batch_size: 32
 
 
+effective_batch_size: 256
+
+
 # set trainer params
 trainer:
-  accumulate_grad_batches: 8
+  accumulate_grad_batches: ${eval:${effective_batch_size} // ${data.train_batch_size}}
 
   min_epochs: 1 # prevents early stopping
   max_epochs: 20
@@ -105,8 +113,6 @@ model:
       ### Base Transformer
       - _target_: src.models.components.base_transformer.transformer.BaseTransformer
 
-        use_decoder: False
-
         ### Encoder
         encoder:
           _target_: src.models.components.base_transformer.encoder_decoder.Encoder
@@ -137,7 +143,7 @@ model:
 
               activation_type: relu
 
-            residual_dropout: 0.3
+            residual_dropout: 0.1
 
 
       ### Branched Decoder layer (GRU + ConvPooling)
