@@ -32,7 +32,8 @@ class CHLitInferenceModule(L.LightningModule):
         preds = self.forward(x)
 
         return {
-            "logits": preds.logits,
-            "embeddings": preds.representations,
-            "indexes": inputs.sample_indexes
+            "logits": preds.logits.detach().cpu(),
+            "embeddings": preds.representations.detach().cpu(),
+            "indexes": inputs.sample_indexes,
+            "lengths": inputs.mask.sum(dim=-1, keepdim=True)
         }

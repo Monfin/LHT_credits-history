@@ -68,25 +68,28 @@ class MultiHeadAttention(nn.Module):
                 for layer, x in zip(self.linears, (query, key, value))
         ]
 
-        # q, k, v ~ (B, h, L, d) # h = num_heads
+        # q ~ (B, h, L, d_qk) # h = num_heads
+        # k ~ (B, h, L, d_qk) # h = num_heads
+        # v ~ (B, h, L, d_v) # h = num_heads
+        # d_v == d_qk by default
 
         if self.seq_len is not None:
             key = self.E_projection(key.transpose(-2, -1))
             value = self.F_projection(value.transpose(-2, -1)).transpose(-2, -1)
-            # q ~ (B, h, L, d)
-            # k ~ (B, h, d, d_k) => P ~ (B, h, L, d_k)
-            # v ~ (B, h, d_k, d) => matmul(P, v) ~ (B, h, L, d)
+            # q ~ (B, h, L, d_qk)
+            # k ~ (B, h, d_qk, d_proj) => P ~ (B, h, L, d_proj)
+            # v ~ (B, h, d_proj, d_v) => matmul(P, v) ~ (B, h, L, d_v)
         else:
             key = key.transpose(-2, -1)
 
         context, _ = self.attention(query, key, value, mask)
 
-        # (B, h, L, d)
+        # (B, h, L, d_v)
 
         # .contiguous() -> makes a copy of the tensor with its own layout ~ for view
         context = context.transpose(1, 2).contiguous().view(n_batches, -1, self.d_model * self.n_heads)
 
-        # (B, L, d * h)
+        # (B, L, d_v * h)
 
         context = self.out_block(context)
 

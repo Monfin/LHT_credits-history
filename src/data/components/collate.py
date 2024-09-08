@@ -8,36 +8,50 @@ from collections import namedtuple
 
 # abstract class for model batches (data type)
 # returns class with __init__, __repr__ and other
-model_batch = namedtuple("model_batch", ["numerical", "categorical", "targets", "sample_indexes", "mask"])
-class ModelBatch(model_batch):
+_model_batch = namedtuple("model_batch", ["numerical", "categorical", "mask", "sample_indexes", "targets"])
+class ModelBatch(_model_batch):
     numerical: Optional[torch.Tensor]
     categorical: Optional[torch.Tensor]
     mask: Optional[torch.Tensor]
-    sample_indexes: Optional[List] = None
-    targets: Optional[torch.Tensor] = None
+    sample_indexes: Optional[List]
+    targets: Optional[torch.Tensor]
 
     def __new__(
         cls, 
         numerical: Optional[torch.Tensor],
         categorical: Optional[torch.Tensor],
-        mask: Optional[torch.Tensor],
-        sample_indexes: Optional[List] = None,
+        mask: Optional[torch.Tensor] = None,
+        sample_indexes: Optional[List[str]] = None,
         targets: Optional[torch.Tensor] = None
     ): 
         return super().__new__(
+            cls,
             numerical=numerical,
             categorical=categorical,
+            mask=mask,
             sample_indexes=sample_indexes,
-            targets=targets,
-            mask=mask
+            targets=targets
     )
 
 
-@dataclass
-class ModelInput:
+_model_input = namedtuple("model_input", ["numerical", "categorical", "mask"])
+class ModelInput(_model_input):
     numerical: Optional[torch.Tensor]
     categorical: Optional[torch.Tensor]
     mask: Optional[torch.Tensor]
+
+    def __new__(
+        cls, 
+        numerical: Optional[torch.Tensor],
+        categorical: Optional[torch.Tensor],
+        mask: Optional[torch.Tensor] = None
+    ): 
+        return super().__new__(
+            cls,
+            numerical=numerical,
+            categorical=categorical,
+            mask=mask
+    )
 
 
 @dataclass
@@ -83,7 +97,7 @@ class BaseCollator(Collator):
     def __call__(self, batch: List[Dict]) -> ModelBatch:
         lengths = torch.as_tensor([item["length"] for item in batch]).unsqueeze(dim=1)
         sample_indexes = [item["sample_index"] for item in batch]
-
+ 
         padded_numerical_features = self.get_padded_tensors(batch, "numerical")
         padded_categorical_features = self.get_padded_tensors(batch, "categorical")
         
@@ -94,9 +108,9 @@ class BaseCollator(Collator):
         return ModelBatch(
             numerical=padded_numerical_features,
             categorical=padded_categorical_features, 
-            targets=targets,
+            mask=mask,
             sample_indexes=sample_indexes,
-            mask=mask
+            targets=targets
         )
 
 @dataclass

@@ -15,11 +15,16 @@ tags: ["credits_history", "linformer"]
 
 seed: 12345
 
+logger:
+  mlflow:
+    experiment_name: linformer_emb16
+    run_name: credits_history
+
 # set data params
 data:
   data_reader:
     _target_: src.data.components.data_reader.DataReader
-    data_path: ${paths.data_dir}/serialized/serialized_first_part_v4
+    data_path: ${paths.data_dir}/serialized/serialized_0_v5
 
   targets_reader: 
     _target_: src.data.components.targets_indexes_reader.TargetsReader
@@ -41,9 +46,12 @@ data:
   val_batch_size: 32
 
 
+effective_batch_size: 256
+
+
 # set trainer params
 trainer:
-  accumulate_grad_batches: 8
+  accumulate_grad_batches: ${eval:${effective_batch_size} // ${data.train_batch_size}}
 
   min_epochs: 1 # prevents early stopping
   max_epochs: 20
@@ -81,7 +89,7 @@ model:
     _partial_: True
     mode: max
     factor: 0.1 # new_lr = factor & old_lr
-    patience: 3
+    patience: 2
 
   net:
     _target_: src.models.components.sequential_model.SequentialLitModel
@@ -99,13 +107,11 @@ model:
         dropout_inputs: 0.3
 
         non_linear: False
-        num_batch_norm: True
+        num_batch_norm: False
 
       
       ### Base Transformer
       - _target_: src.models.components.base_transformer.transformer.BaseTransformer
-
-        use_decoder: False
 
         ### Encoder
         encoder:
@@ -140,7 +146,7 @@ model:
             residual_dropout: 0.3
 
 
-      ### Decoder layer (GRU)
+      ### GRU layer (GRU)
       - _target_: src.models.components.aggregators.gru_aggregator.GRUAggregator
 
         hidden_size: ${model.net.embedding_dim}

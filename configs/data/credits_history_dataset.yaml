@@ -1,5 +1,5 @@
 defaults:
-  - features: features_credits_aggregated_v4.yaml
+  - features: features_credits_aggregated_v5.yaml
   - _self_
 
 _recursive_: False
@@ -8,7 +8,7 @@ _target_: src.data.lightning_data_module.LitDataModule
 
 data_reader:
   _target_: src.data.components.data_reader.DataReader
-  data_path: ${paths.data_dir}/serialized/serialized_first_part_v4
+  data_path: ${paths.data_dir}/serialized/serialized_0_v5
 
 targets_reader: 
   _target_: src.data.components.targets_indexes_reader.TargetsReader

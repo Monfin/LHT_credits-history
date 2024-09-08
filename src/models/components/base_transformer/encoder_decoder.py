@@ -46,7 +46,7 @@ class Encoder(nn.Module):
 
 
     def forward(self, x: SingleForwardState) -> SingleForwardState:
-
+        
         for layer in self.layers:
             x = layer(x)
             
